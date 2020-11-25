@@ -358,6 +358,7 @@ class SocialGameEnv(gym.Env):
         self.action = action
 
         if not self.action_space.contains(action):
+            print("made it within the if statement in SG_E that tests if the the action space doesn't have the action")
             action = np.asarray(action)
             if self.action_space_string == 'continuous':
                 action = np.clip(action, 0, 10)

@@ -114,6 +114,9 @@ def args_convert_bool(args):
     if not isinstance(args.test_planning_env, (bool)):
         args.test_planning_env = utils.string2bool(args.test_planning_env)
 
+    print(args.test_planning_env)
+    print(args.yesterday)
+
 
 def get_environment(args, include_non_vec_env=False):
     """
@@ -225,10 +228,10 @@ def parse_args():
         default="v0",
     )
     parser.add_argument(
-        "algo", help="Stable Baselines Algorithm", type=str, choices=["sac", "ppo"]
+        "--algo", help="Stable Baselines Algorithm", type=str, choices=["sac", "ppo"]
     )
     parser.add_argument(
-        "exp_name", help="Name of the experiment. Used to name log files, etc.", type=str
+        "--exp_name", help="Name of the experiment. Used to name log files, etc.", type=str
     )
     parser.add_argument(
         "--base_log_dir",
@@ -248,7 +251,7 @@ def parse_args():
         "--num_steps",
         help="Number of timesteps to train algo",
         type=int,
-        default=1000000,
+        default=10000,
     )
     # Note: only some algos (e.g. PPO) can use LSTM Policy the feature below is for future testing
     parser.add_argument(
@@ -355,6 +358,9 @@ def main():
     # Print args for reference
     print(args)
     args_convert_bool(args)
+
+    print("after conversion")
+    print(args)
 
     # Create environments
 

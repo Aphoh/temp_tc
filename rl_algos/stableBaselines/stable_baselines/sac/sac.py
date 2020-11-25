@@ -474,6 +474,9 @@ class SAC(OffPolicyRLModel):
                 if callback.on_step() is False:
                     break
 
+                if not self.num_timesteps % 10:
+                    print("reward: " + str(reward))
+
                 # Store only the unnormalized version
                 if self._vec_normalize_env is not None:
                     new_obs_ = self._vec_normalize_env.get_original_obs().squeeze()
