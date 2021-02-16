@@ -1,4 +1,5 @@
 import argparse
+import numpy as np
 import gym
 from stableBaselines.stable_baselines.common.vec_env import (  # pylint: disable=import-error, no-name-in-module
     DummyVecEnv,
@@ -12,7 +13,10 @@ from stableBaselines.stable_baselines.common.env_checker import (  # pylint: dis
     check_env,
 )
 
+import gym_socialgame.envs.utils as env_utils
+
 import tensorflow as tf
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 from tensorboard_logger import (  # pylint: disable=import-error, no-name-in-module
     configure as tb_configure,
@@ -26,7 +30,7 @@ import utils
 import os
 
 
-def train(agent, num_steps, planning_steps, **kwargs):
+def train(agent, num_steps, planning_steps, tb_log_name):
     """
     Purpose: Train agent in env, and then call eval function to evaluate policy
     """
@@ -36,7 +40,7 @@ def train(agent, num_steps, planning_steps, **kwargs):
         total_timesteps=num_steps,
         log_interval=10,
         planning_steps=planning_steps,
-        **kwargs
+        tb_log_name=tb_log_name
     )
 
 
@@ -72,8 +76,15 @@ def get_agent(env, args, non_vec_env=None):
         from stableBaselines.stable_baselines.sac.sac import SAC as mySAC
         from stable_baselines.sac.policies import MlpPolicy as policy
         plotter_person_reaction = utils.plotter_person_reaction
+        action_to_prices_fn = lambda x: (x + 1) * 5 #normal continuous
         if args.action_space == "fourier":
             plotter_person_reaction = utils.fourier_plotter_person_reaction(10, args.fourier_basis_size)
+            action_to_prices_fn = lambda x: env_utils.fourier_points_from_action(x, 10, args.fourier_basis_size)
+        elif args.action_space == "c_norm":
+            action_to_prices_fn = lambda x: 10 * (x / np.sum(x)) if not np.any(x==np.inf) else np.ones(10)/10
+            plotter_person_reaction = None
+
+
 
         return mySAC(
             policy,
@@ -85,6 +96,8 @@ def get_agent(env, args, non_vec_env=None):
             tensorboard_log=args.rl_log_path,
             people_reaction_log_dir=os.path.join(args.log_path, "people_reaction/"),
             plotter_person_reaction=plotter_person_reaction,
+            action_to_prices_fn=action_to_prices_fn,
+            learning_rate=args.learning_rate
         )
 
     # I (Akash) still need to study PPO to understand it, I implemented b/c I know Joe's work used PPO
@@ -136,9 +149,10 @@ def get_environment(args, include_non_vec_env=False):
     if args.algo == "sac":
         if args.action_space == "fourier":
             action_space_string = "fourier"
+        elif args.action_space == "c_norm":
+            action_space_string = "continuous_normalized"
         else:
             action_space_string = "continuous"
-
     # For algos (e.g. ppo) which can handle discrete or continuous case
     # Note: PPO typically uses normalized environment (#TODO)
     else:
@@ -164,7 +178,6 @@ def get_environment(args, include_non_vec_env=False):
         reward_function = args.reward_function
 
     if not planning:
-        print("Not planning, phew")
         socialgame_env = gym.make(
             "gym_socialgame:socialgame{}".format(env_id),
             action_space_string=action_space_string,
@@ -175,7 +188,8 @@ def get_environment(args, include_non_vec_env=False):
             energy_in_state=args.energy,
             pricing_type=args.pricing_type,
             reward_function=reward_function,
-            fourier_basis_size=args.fourier_basis_size
+            fourier_basis_size=args.fourier_basis_size,
+            manual_tou_magnitude=args.manual_tou_magnitude
         )
     else:
         # go into the planning mode
@@ -264,7 +278,7 @@ def parse_args():
         "--action_space",
         help="Action Space for Algo (only used for algos that are compatable with both discrete & cont",
         default="c",
-        choices=["c", "d", "fourier"],
+        choices=["c", "c_norm", "d", "fourier"],
     )
     parser.add_argument(
         "--fourier_basis_size",
@@ -284,14 +298,20 @@ def parse_args():
         "--one_day",
         help="Specific Day of the year to Train on (default = None, train over entire yr)",
         type=int,
-        default=-1,
+        default=0,
         choices=[i for i in range(-1, 366)],
+    )
+    parser.add_argument(
+        "--manual_tou_magnitude",
+        help="Relative magnitude of the TOU (should be > 1)",
+        type=float,
+        default=None
     )
     parser.add_argument(
         "--num_players",
         help="Number of players ([1, 20]) in social game",
         type=int,
-        default=1,
+        default=10,
         choices=[i for i in range(1, 21)],
     )
     parser.add_argument(
@@ -343,6 +363,12 @@ def parse_args():
         default="lcr",
         choices=["scaled_cost_distance", "log_cost_regularized", "scd", "lcr"],
     )
+    parser.add_argument(
+        "--learning_rate",
+        help="learning rate of the the agent",
+        type=float,
+        default=3e-4,
+    )
     args = parser.parse_args()
 
     args.log_path = os.path.join(args.base_log_dir, args.exp_name + "/")
@@ -371,9 +397,11 @@ def main():
     env, socialgame_env = get_environment(
         args, include_non_vec_env=True
     )
+    print("Got environment, getting agent")
 
     # Create Agent
     model = get_agent(env, args, non_vec_env=socialgame_env)
+    print("Got agent")
 
     # Train algo, (logging through Tensorboard)
     print("Beginning Testing!")
@@ -389,7 +417,7 @@ def main():
     # Print evaluation of policy
     print("Beginning Evaluation")
 
-    eval_env = get_environment(args, planning=False)
+    eval_env = get_environment(args)
     eval_policy(model, eval_env, num_eval_episodes=10)
 
     print(

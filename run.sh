@@ -1,4 +1,5 @@
 #!/bin/sh
 
-docker build . -t tc-temp
-docker run --gpus=all -it --rm -u $(id -u):$(id -g) -v "$(pwd)/rl_algos/logs:/rl_algos/logs" tc-temp
+DOCKER_BUILDKIT=1 docker build . -t tc-temp
+
+docker run -it --gpus=all --rm --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 -u $(id -u):$(id -g) -v "$(pwd):/tc" tc-temp

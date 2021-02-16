@@ -25,7 +25,8 @@ class SocialGameEnv(gym.Env):
         day_of_week = False,
         pricing_type="TOU",
         reward_function = "scaled_cost_distance",
-        fourier_basis_size=4
+        fourier_basis_size=4,
+        manual_tou_magnitude=None
         ):
         """
         SocialGameEnv for an agent determining incentives in a social game.
@@ -41,6 +42,7 @@ class SocialGameEnv(gym.Env):
                     Note: -1 = Random Day, 0 = Train over entire Yr, [1,365] = Day of the Year
             energy_in_state: (Boolean) denoting whether (or not) to include the previous day's energy consumption within the state
             yesterday_in_state: (Boolean) denoting whether (or not) to append yesterday's price signal to the state
+            manual_tou_magnitude: (Float>1) The relative magnitude of the TOU pricing to the regular pricing
 
         """
         super(SocialGameEnv, self).__init__()
@@ -65,6 +67,7 @@ class SocialGameEnv(gym.Env):
         self.yesterday_in_state = yesterday_in_state
         self.reward_function = reward_function
         self.fourier_basis_size = fourier_basis_size
+        self.manual_tou_magnitude = manual_tou_magnitude
 
         self.day = 0
         self.days_of_week = [0, 1, 2, 3, 4]
@@ -74,13 +77,7 @@ class SocialGameEnv(gym.Env):
         #Create Observation Space (aka State Space)
         self.observation_space = self._create_observation_space()
 
-        if pricing_type=="TOU":
-            self.pricing_type = "time_of_use"
-        elif pricing_type == "RTP":
-            self.pricing_type = "real_time_pricing"
-        else:
-            print("Wrong pricing type")
-            raise ValueError
+        self.pricing_type = "real_time_pricing" if pricing_type.upper() == "RTP" else "time_of_use"
 
         self.prices = self._get_prices()
         #Day corresponds to day # of the yr
@@ -161,6 +158,9 @@ class SocialGameEnv(gym.Env):
         if self.action_space_string == "continuous":
             return spaces.Box(low=-1, high=1, shape=(self.points_length,), dtype=np.float32)
 
+        elif self.action_space_string == "continuous_normalized":
+            return spaces.Box(low=0, high=np.inf, shape=(self.points_length,), dtype=np.float32)
+
         elif self.action_space_string == "multidiscrete":
             discrete_space = [self.action_subspace] * self.points_length
             return spaces.MultiDiscrete(discrete_space)
@@ -199,7 +199,7 @@ class SocialGameEnv(gym.Env):
         my_baseline_energy = pd.DataFrame(data = {"net_energy_use" : working_hour_energy})
 
         for i in range(self.number_of_participants):
-            player = DeterministicFunctionPerson(my_baseline_energy, points_multiplier = 10, response= self.response_type_string) #, )
+            player = CurtailandShiftPerson(my_baseline_energy, points_multiplier = 10)
             player_dict['player_{}'.format(i)] = player
 
         return player_dict
@@ -217,33 +217,40 @@ class SocialGameEnv(gym.Env):
         """
         all_prices = []
         print("--" * 10)
-        print(self.one_day)
+        print("One day is: ", self.one_day)
         print("--" * 10)
 
         type_of_DR = self.pricing_type
 
-        if self.one_day != -1:
+        if self.manual_tou_magnitude:
+            price = 0.103 * np.ones((365, 10))
+            price[:,5:8] = self.manual_tou_magnitude
+            print("Using manual tou pricing", price[0])
+            return price
+
+        if self.one_day != 0:
+            print("Single Day")
             # If one_day we repeat the price signals from a fixed day
             # Tweak One_Day Price Signal HERE
             price = price_signal(self.one_day, type_of_DR=type_of_DR)
             price = np.array(price[8:18])
-            if np.mean(price)==price[2]:
-                price[3:6]+=.3
+            if np.mean(price) == price[2]:
+                print("Given constant price signal")
+                price[3:6] += 0.3
             price = np.maximum(0.01 * np.ones_like(price), price)
-
             for i in range(365):
                 all_prices.append(price)
         else:
-            day = 0
-            for i in range(365):
-                price = price_signal(day + 1, type_of_DR=type_of_DR)
+            print("All days")
+            for day in range(1, 366):
+                price = price_signal(day, type_of_DR=type_of_DR)
                 price = np.array(price[8:18])
                 # put a floor on the prices so we don't have negative prices
-                if np.mean(price)==price[2]:
-                    price[3:6]+=.3
+                if np.mean(price) == price[2]:
+                    print("Given constant price signal")
+                    price[3:6] += 0.3
                 price = np.maximum(0.01 * np.ones_like(price), price)
                 all_prices.append(price)
-                day += 1
 
         return np.array(all_prices)
 
@@ -266,6 +273,9 @@ class SocialGameEnv(gym.Env):
         elif self.action_space_string == 'continuous':
             #Continuous space is symmetric [-1,1], we map to -> [0,10] by adding 1 and multiplying by 5
             points = 5 * (action + np.ones_like(action))
+
+        elif self.action_space_string == "continuous_normalized":
+            points = 10 * (action / np.sum(action))
 
         elif self.action_space_string == "fourier":
             points = fourier_points_from_action(action, self.points_length, self.fourier_basis_size)
@@ -327,16 +337,18 @@ class SocialGameEnv(gym.Env):
                 player_energy = energy_consumptions[player_name]
                 player_reward = Reward(player_energy, price, player_min_demand, player_max_demand)
 
-                if reward_function == "scaled_cost_distance":
-                    player_ideal_demands = player_reward.ideal_use_calculation()
-                    reward = player_reward.scaled_cost_distance(player_ideal_demands)
+                #if reward_function == "scaled_cost_distance":
+                #    player_ideal_demands = player_reward.ideal_use_calculation()
+                #    reward = player_reward.scaled_cost_distance(player_ideal_demands)
 
-                elif reward_function == "log_cost_regularized":
-                    reward = player_reward.log_cost_regularized()
+                #elif reward_function == "log_cost_regularized":
+                #    reward = player_reward.log_cost_regularized()
+
+                reward = player_reward.log_cost_regularized()
 
                 total_reward += reward
 
-        return total_reward
+        return total_reward / self.number_of_participants
 
     def step(self, action):
         """
@@ -361,7 +373,7 @@ class SocialGameEnv(gym.Env):
             print("made it within the if statement in SG_E that tests if the the action space doesn't have the action")
             action = np.asarray(action)
             if self.action_space_string == 'continuous':
-                action = np.clip(action, 0, 10)
+                action = np.clip(action, -1, 1)
 
             elif self.action_space_string == 'multidiscrete':
                 action = np.clip(action, 0, 2)
@@ -374,11 +386,7 @@ class SocialGameEnv(gym.Env):
         self.day = (self.day + 1) % 365
         self.curr_iter += 1
 
-        if self.curr_iter > 0:
-            done = True
-            self.curr_iter = 0
-        else:
-            done = False
+        done = self.curr_iter > 0
 
         points = self._points_from_action(action)
 
@@ -387,7 +395,6 @@ class SocialGameEnv(gym.Env):
         # HACK ALERT. USING AVG ENERGY CONSUMPTION FOR STATE SPACE. this will not work if people are not all the same
 
         self.prev_energy = energy_consumptions["avg"]
-
 
         observation = self._get_observation()
         reward = self._get_reward(prev_price, energy_consumptions, reward_function = self.reward_function)
@@ -445,7 +452,7 @@ class SocialGameEnv(gym.Env):
         #Checking that action_space_string is valid
         assert isinstance(action_space_string, str), "action_space_str is not of type String. Instead got type {}".format(type(action_space_string))
         action_space_string = action_space_string.lower()
-        assert action_space_string in ["continuous", "multidiscrete", "fourier"], "action_space_str is not continuous or discrete. Instead got value {}".format(action_space_string)
+        assert action_space_string in ["continuous", "multidiscrete", "fourier", "continuous_normalized"], "action_space_str is not continuous or discrete. Instead got value {}".format(action_space_string)
 
         #Checking that response_type_string is valid
         assert isinstance(response_type_string, str), "Variable response_type_string should be of type String. Instead got type {}".format(type(response_type_string))
