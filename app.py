@@ -37,6 +37,10 @@ def add_participants():
 
     return "Done!"
 
+@app.route("/docker_test")
+def hello():
+    return "Hello world!"
+
 
 # @app.route("/load_and_predict", methods=["GET"])
 # def load_and_predict(date):
