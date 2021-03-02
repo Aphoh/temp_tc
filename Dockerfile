@@ -12,7 +12,10 @@ COPY requirements.txt ./
 RUN pip install -r ./requirements.txt
 
 COPY models.py /app/
-COPY app.py /app/
+COPY app.py /app/  
+COPY init.py /app/
+COPY config.py /app/  
+COPY database.py /app/
 WORKDIR /app
 
 RUN export FLASK_APP=app.py
