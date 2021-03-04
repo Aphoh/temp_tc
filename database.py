@@ -10,6 +10,10 @@ def get_instance_from_key(model, key_name, key_value):
     return model.query.filter(getattr(model, key_name), key_value)[0]
 
 
+def get_all_instances_from_key(model, key_name, key_value):
+    return model.query.filter(getattr(model, key_name), key_value)
+
+
 def add_instance(model, **kwargs):
     instance = model(**kwargs)
     db.session.add(instance)

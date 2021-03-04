@@ -63,7 +63,16 @@ class Points(db.Model):
         self.hour = hour
         self.point_value = point_value
 
-
+class BasePoints(db.Model):
+    __tablename__ = "base_points"
+    
+    hour = db.Column(db.Integer, primary_key=True)
+    point_value = db.Column(db.Float)
+    
+    def __init__(self, hour, point_value):
+        self.hour, self.point_value = hour, point_value
+    
+    
 class ModelParams(db.Model):
     __tablename__ = "model_params"
 
@@ -71,6 +80,11 @@ class ModelParams(db.Model):
     timestamp = db.Column(db.DateTime, unique=True)
     params = db.Column(db.Binary)
     ack_id = db.Column(db.Integer, db.ForeignKey("acknowledgments.id"))
+
+    def __init__(self, timestamp, params, ack_id=None):
+        self.timestamp, self.params, self.ack_id = timestamp, params, ack_id
+        
+
 
 
 class Acknowledgments(db.Model):

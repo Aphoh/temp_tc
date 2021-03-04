@@ -1,12 +1,11 @@
+from config import END_OF_INITIAL_PERIOD, IS_MULTIAGENT
 from datetime import datetime
-from typing import List
-from flask import Flask, request, Response
-from flask_sqlalchemy import SQLAlchemy
+from flask import request
 
-from init import create_app
-from database import get_instance_from_key, add_instance
+from init import create_app, 
+from database import get_all_instances_from_key, get_instance_from_key, add_instance
 from models import (
-    db,
+    BasePoints, db,
     Game,
     Participant,
     EnergyUsage,
@@ -17,6 +16,18 @@ from models import (
 
 app = create_app()
 
+###
+# HELPER FUNCTIONS
+###
+
+def load_latest_model_params():
+    raise NotImplementedError
+
+def get_prices_from_model(params, is_multiagent):
+    raise NotImplementedError
+
+def is_initial_phase():
+    return datetime.strptime(END_OF_INITIAL_PERIOD, "%d/%m/%Y") > datetime.now()
 
 @app.route("/participants", methods=["POST"])
 def add_participants():
@@ -35,31 +46,32 @@ def add_participants():
         db.session.add(new_participant)
     db.session.commit()
 
-    return Response("{'accepted':'true'}", status=202, mimetype="application/json")
+    return {"accepted": "true"}, 202
 
 
 @app.route("/energy/pricing", methods=["GET"])
-def get_energy_pricing():
+def get_energy_pricing(game_id):
     """
-    1. monday morning -- get_energy_pricing for monday day (requires state space information)
-        i. needs friday's energy consumption, and grid information (pre-stored)
-    2. monday night -- submit_energy_consumption for monday day
-        i. energy consumption stored in database
-    3. monday night -- get_points_and_base_points
-        i. Update model (can be done in parallel with calculating earned points for monday day).
-            a. Use loaded energy consumption to update model parameters
-            b. Store model parameters in database, along with ack_id
-        ii. Calculate earned points for monday day
-            a. Depends on prices for monday day (already calculated monday morning, monday's energy, base_points)
-    4. tuesday morning - get energy_pricing for tuesday day. 
-        i. Load latest model parameters, use them to generate newest price signal for current day
-        ii. Store price signal in database
-        iii. Return price signal
     """
+
+    if is_initial_phase():
+        current_participants = get_all_instances_from_key(
+            Participant, "game_id", game_id
+        )
+        prices_per_person = [{
+            "participant": participant.id,
+            # "pricing": [{db.session.query(BasePoints)]
+        }]
+    else:
+        params = load_latest_model_params()
+        prices_per_person = get_prices_from_model(
+            params=params, is_multiagent=IS_MULTIAGENT
+        )
 
     req = request.get_json()
 
     for participant_list in req:
+        pass
 
         pass
     pass
@@ -93,18 +105,17 @@ def submit_energy_consumption():
                 unit=unit,
             )
 
-        acknowledgment_instance = add_instance(
-            Acknowledgments, timestamp=datetime.now()
-        )
-
         return {
-            "acknowledged": "true",
-            "acknowledgmentId": str(acknowledgment_instance.id),
-        }
+            "accepted": "true"
+        }, 202
 
 
 @app.route("/energy/points", methods=["GET"])
 def get_points_with_base_points():
+    if is_initial_phase():
+        pass
+    else:
+        pass
     pass
 
 
