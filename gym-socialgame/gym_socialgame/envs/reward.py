@@ -156,27 +156,6 @@ class Reward():
 			print("WEIRD REWARD ALERT. IDEAL COST >= CURRENT COST. returning reward of 10")
 			return 10
   
-	def logprob_reward(self, obs):
-		'''
-		args: wip
-
-		returns: 
-			the log probability of the given observation
-		'''	
-		# TODO: implement a combined reward with the log prob
-		# obs = obs.copy()
-		# means = np.mean(self.buffer, axis=0)
-		# stds = np.std(self.buffer, axis=0)
-		
-		# # For numerical stability, clip stds to not be 0
-		# thresh = 1e-5
-		# stds = np.clip(stds, thresh, None)
-    #     # print ("stds, means: ", np.mean(stds), np.mean(means))
-    #     # import pdb; pdb.set_trace()
-		# # Gaussian log prob
-		# logprob = -0.5*np.sum(np.log(2*np.pi*stds)) - np.sum(np.square(obs-means)/(2*np.square(stds)))
-		# return logprob
- 
 
 	def scaled_cost_distance(self, ideal_demands):
 		"""
