@@ -1,5 +1,13 @@
 #!/bin/sh
 
-DOCKER_BUILDKIT=1 docker build . -t tc-temp
+UNAME=tc
+DOCKER_BUILDKIT=1 docker build . -t tc-temp --build-arg UID=$(id -u) --build-arg UNAME=$UNAME
+WORKDIR=/home/$UNAME
 
-docker run -it --rm --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 -u $(id -u):$(id -g) -v "$(pwd):/tc" tc-temp
+GPU_FLAGS=""
+if command -v nvidia-smi &> /dev/null
+then
+  GPU_FLAGS="--gpus=all"
+fi
+
+docker run -it $GPU_FLAGS --rm --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 -v "$(pwd):$WORKDIR" tc-temp
