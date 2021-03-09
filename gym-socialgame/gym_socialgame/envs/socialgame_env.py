@@ -71,12 +71,12 @@ class SocialGameEnv(gym.Env):
         self.reward_function = reward_function
         self.fourier_basis_size = fourier_basis_size
         self.manual_tou_magnitude = manual_tou_magnitude
+        self.hours_in_day = 10
 
         self.day = 0
         self.days_of_week = [0, 1, 2, 3, 4]
         self.day_of_week_flag = day_of_week
         self.day_of_week = self.days_of_week[self.day % 5]
-        self.hours_in_day = 10
 
         #Create Observation Space (aka State Space)
         self.observation_space = self._create_observation_space()
@@ -93,6 +93,7 @@ class SocialGameEnv(gym.Env):
         #Create Action Space
         self.points_length = 10
         self.action_subspace = 3
+        self.action_subspace = 11
         self.action_space = self._create_action_space()
 
         #Create Players
@@ -157,7 +158,7 @@ class SocialGameEnv(gym.Env):
             return spaces.Box(low=0, high=np.inf, shape=(self.points_length,), dtype=np.float32)
 
         elif self.action_space_string == "multidiscrete":
-            discrete_space = [self.action_subspace] * self.points_length
+            discrete_space = [self.action_subspace] * self.points_length  # num of actions times the length of the action space. [a1, a2, a3], [a1, a2, a3]
             return spaces.MultiDiscrete(discrete_space)
 
         elif self.action_space_string == "fourier":
@@ -194,7 +195,8 @@ class SocialGameEnv(gym.Env):
         my_baseline_energy = pd.DataFrame(data = {"net_energy_use" : working_hour_energy})
 
         for i in range(self.number_of_participants):
-            player = CurtailandShiftPerson(my_baseline_energy, points_multiplier = 10)
+            player = DeterministicFunctionPerson(my_baseline_energy, points_multiplier = 10, response = 'l')
+            #player = CurtailandShiftPerson(my_baseline_energy, points_multiplier = 10)
             player_dict['player_{}'.format(i)] = player
 
         return player_dict
@@ -223,7 +225,7 @@ class SocialGameEnv(gym.Env):
             print("Using manual tou pricing", price[0])
             return price
 
-        if self.one_day != 0:
+        if self.one_day is not None:
             print("Single Day")
             # If one_day we repeat the price signals from a fixed day
             # Tweak One_Day Price Signal HERE
@@ -308,7 +310,7 @@ class SocialGameEnv(gym.Env):
         energy_consumptions["avg"] = total_consumption / self.number_of_participants
         return energy_consumptions
 
-    def _get_reward(self, price, energy_consumptions, reward_function = "scaled_cost_distance"):
+    def _get_reward(self, price, energy_consumptions, reward_function = "log_cost_regularized"):
         """
         Purpose: Compute reward given price signal and energy consumption of the office
 
@@ -344,7 +346,7 @@ class SocialGameEnv(gym.Env):
 
                 total_reward += reward
 
-        return total_reward / self.number_of_participants
+        return total_reward
 
     def step(self, action):
         """
@@ -368,10 +370,10 @@ class SocialGameEnv(gym.Env):
         if not self.action_space.contains(action):
             action = np.asarray(action)
             if self.action_space_string == 'continuous':
-                action = np.clip(action, 0, 10)
+                action = np.clip(action, -1, 1) #TODO: check if correct
 
             elif self.action_space_string == 'multidiscrete':
-                action = np.clip(action, 0, 2)
+                action = np.clip(action, 0, self.action_subspace - 1)
 
             elif self.action_space_string == "fourier":
                 assert False, "Fourier basis mode, got incorrect action. This should never happen. action: {}".format(action)

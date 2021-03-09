@@ -281,7 +281,7 @@ def parse_args():
         help="Specific Day of the year to Train on (default = 15, train on day 15)",
         type=int,
         default=15,
-        choices=[i for i in range(-1, 366)],
+        choices=[i for i in range(365)],
     )
     parser.add_argument(
         "--manual_tou_magnitude",
