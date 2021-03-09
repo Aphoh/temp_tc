@@ -26,6 +26,7 @@ class SocialGameEnv(gym.Env):
         day_of_week = False,
         pricing_type="TOU",
         reward_function = "scaled_cost_distance",
+        buffer='gaussian',
         fourier_basis_size=4,
         manual_tou_magnitude=None
         ):
@@ -97,6 +98,11 @@ class SocialGameEnv(gym.Env):
 
         #TODO: Check initialization of prev_energy
         self.prev_energy = np.zeros(10)
+
+        #TODO: The buffer was added here, ensure that it is useful 
+        if buffer == 'gaussian':
+            self.buffer = GaussianBuffer(self.points_length)
+
 
         print("\n Social Game Environment Initialized! Have Fun! \n")
 
@@ -326,6 +332,7 @@ class SocialGameEnv(gym.Env):
             Energy_consumption: Dictionary containing the energy usage by player and the average energy used in the office (key = "avg")
             TODO: Does it actually return that? 
         """
+        self.buffer.add(self.player_dict['avg'])
 
         total_reward = 0
         for player_name in energy_consumptions:
@@ -352,7 +359,7 @@ class SocialGameEnv(gym.Env):
 
                 total_reward += reward
 
-        return total_reward / self.number_of_participants
+        return (total_reward / self.number_of_participants) + self.buffer.logprob(self.player_dict['avg'])
 
     def step(self, action):
         """

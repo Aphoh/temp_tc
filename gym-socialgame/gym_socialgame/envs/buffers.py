@@ -46,7 +46,7 @@ class BernoulliBuffer(BaseBuffer):
         self.buffer_size += 1
 
     def get_params(self):
-        theta = np.array(self.buffer) / self.buffer_size
+        theta = np.array(self.buffer) / self.buffer_size 
         thresh = 1e-4
         theta = np.clip(theta, a_min=thresh, a_max=(1-thresh))
         return theta
