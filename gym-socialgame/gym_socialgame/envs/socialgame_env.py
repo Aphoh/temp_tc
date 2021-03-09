@@ -332,7 +332,6 @@ class SocialGameEnv(gym.Env):
             Energy_consumption: Dictionary containing the energy usage by player and the average energy used in the office (key = "avg")
             TODO: Does it actually return that? 
         """
-        self.buffer.add(self.player_dict['avg'])
 
         total_reward = 0
         for player_name in energy_consumptions:
@@ -350,16 +349,15 @@ class SocialGameEnv(gym.Env):
                 #    player_ideal_demands = player_reward.ideal_use_calculation()
                 #    reward = player_reward.scaled_cost_distance(player_ideal_demands)
 
-                #elif reward_function == "log_cost_regularized":
+                #echanges sh to bashlif reward_function == "log_cost_regularized":
                 #    reward = player_reward.log_cost_regularized()
 
-
-
-                reward = player_reward.log_cost_regularized()
+                # reward = player_reward.log_cost_regularized() + self.buffer.logprob(player_energy)
+                reward = player_reward.log_cost_regularized() - self.buffer.logprob(self._get_observation())
 
                 total_reward += reward
 
-        return (total_reward / self.number_of_participants) + self.buffer.logprob(self.player_dict['avg'])
+        return (total_reward / self.number_of_participants)
 
     def step(self, action):
         """
@@ -407,6 +405,7 @@ class SocialGameEnv(gym.Env):
         self.prev_energy = energy_consumptions["avg"]
 
         observation = self._get_observation()
+        self.buffer.add(observation)
         reward = self._get_reward(prev_price, energy_consumptions, reward_function = self.reward_function)
         info = {}
         return observation, reward, done, info
