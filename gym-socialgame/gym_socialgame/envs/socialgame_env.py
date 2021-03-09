@@ -9,6 +9,7 @@ import tensorflow as tf
 from gym_socialgame.envs.utils import price_signal, fourier_points_from_action
 from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
+from gym_socialgame.envs.buffers import GaussianBuffer
 
 import pickle
 
@@ -323,6 +324,7 @@ class SocialGameEnv(gym.Env):
 
         Returns:
             Energy_consumption: Dictionary containing the energy usage by player and the average energy used in the office (key = "avg")
+            TODO: Does it actually return that? 
         """
 
         total_reward = 0
@@ -343,6 +345,8 @@ class SocialGameEnv(gym.Env):
 
                 #elif reward_function == "log_cost_regularized":
                 #    reward = player_reward.log_cost_regularized()
+
+
 
                 reward = player_reward.log_cost_regularized()
 
