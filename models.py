@@ -40,12 +40,14 @@ class EnergyUsage(db.Model):
     timestamp = db.Column(db.DateTime, unique=True)
     value = db.Column(db.Float)
     unit = db.Column(db.String)
+    ack_id = db.Column(db.Inteter, db.ForeignKey("acknowledgments.id"))
 
-    def __init__(self, participant_id, timestamp, value, unit):
+    def __init__(self, participant_id, timestamp, value, unit, ack_id=None):
         self.participant_id = participant_id
         self.timestamp = timestamp
         self.value = value
         self.unit = unit
+        self.ack_id = ack_id
 
 
 class Points(db.Model):
@@ -63,16 +65,17 @@ class Points(db.Model):
         self.hour = hour
         self.point_value = point_value
 
+
 class BasePoints(db.Model):
     __tablename__ = "base_points"
-    
+
     hour = db.Column(db.Integer, primary_key=True)
     point_value = db.Column(db.Float)
-    
+
     def __init__(self, hour, point_value):
         self.hour, self.point_value = hour, point_value
-    
-    
+
+
 class ModelParams(db.Model):
     __tablename__ = "model_params"
 
@@ -83,8 +86,6 @@ class ModelParams(db.Model):
 
     def __init__(self, timestamp, params, ack_id=None):
         self.timestamp, self.params, self.ack_id = timestamp, params, ack_id
-        
-
 
 
 class Acknowledgments(db.Model):

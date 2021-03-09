@@ -1,3 +1,10 @@
+"""
+Interfacing with database and static data.
+"""
+
+import pandas as pd
+
+
 from models import db
 
 
