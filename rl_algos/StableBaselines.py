@@ -26,6 +26,7 @@ from tensorboard_logger import (  # pylint: disable=import-error, no-name-in-mod
 )
 
 import utils
+import wandb
 
 import os
 
@@ -118,12 +119,12 @@ def get_agent(env, args, non_vec_env=None):
 
 def args_convert_bool(args):
     """
-    Purpose: Convert args which are specified as strings (e.g. yesterday, energy) into boolean to work with environment
+    Purpose: Convert args which are specified as strings (e.g. energy/price_in_state) into boolean to work with environment
     """
-    if not isinstance(args.yesterday, (bool)):
-        args.yesterday = utils.string2bool(args.yesterday)
-    if not isinstance(args.energy, (bool)):
-        args.energy = utils.string2bool(args.energy)
+    if not isinstance(args.energy_in_state, (bool)):
+        args.energy_in_state = utils.string2bool(args.energy_in_state)
+    if not isinstance(args.price_in_state, (bool)):
+        args.price_in_state = utils.string2bool(args.price_in_state)
     if not isinstance(args.test_planning_env, (bool)):
         args.test_planning_env = utils.string2bool(args.test_planning_env)
 
@@ -171,6 +172,8 @@ def get_environment(args, include_non_vec_env=False):
         reward_function = "log_cost_regularized"
     elif args.reward_function == "scd":
         reward_function = "scaled_cost_distance"
+    elif args.reward_function == "lc":
+        reward_function = "log_cost"
     else:
         reward_function = args.reward_function
 
@@ -181,8 +184,8 @@ def get_environment(args, include_non_vec_env=False):
             response_type_string=args.response,
             one_day=args.one_day,
             number_of_participants=args.num_players,
-            yesterday_in_state=args.yesterday,
-            energy_in_state=args.energy,
+            energy_in_state=args.energy_in_state,
+            price_in_state=args.price_in_state,
             pricing_type=args.pricing_type,
             reward_function=reward_function,
             fourier_basis_size=args.fourier_basis_size,
@@ -196,8 +199,8 @@ def get_environment(args, include_non_vec_env=False):
             response_type_string=args.response,
             one_day=args.one_day,
             number_of_participants=args.num_players,
-            yesterday_in_state=args.yesterday,
-            energy_in_state=args.energy,
+            price_in_state=args.price_in_state,
+            energy_in_state=args.energy_in_state,
             pricing_type=args.pricing_type,
             planning_flag=planning_flag,
             planning_steps=args.planning_steps,
@@ -293,14 +296,14 @@ def parse_args():
     )
     parser.add_argument(
         "--one_day",
-        help="Specific Day of the year to Train on (default = None, train over entire yr)",
+        help="Specific Day of the year to Train on (default = 15, train on day 15)",
         type=int,
-        default=0,
+        default=15,
         choices=[i for i in range(-1, 366)],
     )
     parser.add_argument(
         "--manual_tou_magnitude",
-        help="Relative magnitude of the TOU (should be > 1)",
+        help="Magnitude of the TOU during hours 5,6,7. Sets price in normal hours to 0.103.",
         type=float,
         default=None
     )
@@ -312,15 +315,15 @@ def parse_args():
         choices=[i for i in range(1, 21)],
     )
     parser.add_argument(
-        "--yesterday",
-        help="Whether to include yesterday in state (default = F)",
+        "--energy_in_state",
+        help="Whether to include energy in state (default = F)",
         type=str,
         default="F",
         choices=["T", "F"],
     )
     parser.add_argument(
-        "--energy",
-        help="Whether to include energy in state (default = F)",
+        "--price_in_state",
+        help="Whether to include price in state (default = F)",
         type=str,
         default="F",
         choices=["T", "F"],
@@ -358,7 +361,7 @@ def parse_args():
         help="reward function to test",
         type=str,
         default="lcr",
-        choices=["scaled_cost_distance", "log_cost_regularized", "scd", "lcr"],
+        choices=["scaled_cost_distance", "log_cost_regularized", "log_cost", "scd", "lcr", "lc"],
     )
     parser.add_argument(
         "--learning_rate",
@@ -375,12 +378,16 @@ def parse_args():
 
 
 def main():
+
+    wandb.init(project="energy-demand-response-game", entity="social-game-rl", sync_tensorboard=True)
+
     # Get args
     args = parse_args()
 
     # Print args for reference
     print(args)
     args_convert_bool(args)
+    wandb.config.update(args)
 
     # Create environments
 

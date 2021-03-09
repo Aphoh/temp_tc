@@ -236,3 +236,6 @@ old/
 .bash_history
 .keras/
 .npm/
+wandb/
+.netrc
+.python_history

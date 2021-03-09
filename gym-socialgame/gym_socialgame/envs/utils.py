@@ -81,7 +81,12 @@ def price_signal(day = 45, type_of_DR = "real_time_pricing"):
 
     elif type_of_DR == "time_of_use":
         if np.mean(price_24[8:18]) == price_24[9]:
-            price_24[13:16] += 3
+            print("Doing hacky adjustment to signal")
+            print("Signal before adjustment:")
+            print(price_24)
+            print("Signal after:")
+            price_24[13:16] += .3
+            print(price_24)
         return price_24
     else:
         return "error!!!"
