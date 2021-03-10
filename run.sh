@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 UNAME=tc
 DOCKER_BUILDKIT=1 docker build . -t tc-temp --build-arg UID=$(id -u) --build-arg UNAME=$UNAME

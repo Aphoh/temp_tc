@@ -1,17 +1,12 @@
 import argparse
 import numpy as np
 import gym
-from stableBaselines.stable_baselines.common.vec_env import (  # pylint: disable=import-error, no-name-in-module
-    DummyVecEnv,
-    VecCheckNan,
-    VecNormalize,
-)
-from stableBaselines.stable_baselines.common.evaluation import (  # pylint: disable=import-error, no-name-in-module
-    evaluate_policy,
-)
-from stableBaselines.stable_baselines.common.env_checker import (  # pylint: disable=import-error, no-name-in-module
-    check_env,
-)
+from stable_baselines import SAC
+from stable_baselines.sac.policies import MlpPolicy
+from stable_baselines.common.vec_env import (DummyVecEnv, VecCheckNan, VecNormalize)
+
+from stable_baselines.common.evaluation import evaluate_policy
+from stable_baselines.common.env_checker import check_env
 
 import gym_socialgame.envs.utils as env_utils
 
@@ -26,11 +21,12 @@ from tensorboard_logger import (  # pylint: disable=import-error, no-name-in-mod
 )
 
 import utils
+import wandb
 
 import os
 
 
-def train(agent, num_steps, planning_steps, tb_log_name):
+def train(agent, num_steps, tb_log_name):
     """
     Purpose: Train agent in env, and then call eval function to evaluate policy
     """
@@ -39,7 +35,6 @@ def train(agent, num_steps, planning_steps, tb_log_name):
     agent.learn(
         total_timesteps=num_steps,
         log_interval=10,
-        planning_steps=planning_steps,
         tb_log_name=tb_log_name
     )
 
@@ -73,34 +68,16 @@ def get_agent(env, args, non_vec_env=None):
     Exceptions: Raises exception if args.algo unknown (not needed b/c we filter in the parser, but I added it for modularity)
     """
     if args.algo == "sac":
-        from stableBaselines.stable_baselines.sac.sac import SAC as mySAC
-        from stable_baselines.sac.policies import MlpPolicy as policy
-        plotter_person_reaction = utils.plotter_person_reaction
-        action_to_prices_fn = lambda x: (x + 1) * 5 #normal continuous
-        if args.action_space == "fourier":
-            plotter_person_reaction = utils.fourier_plotter_person_reaction(10, args.fourier_basis_size)
-            action_to_prices_fn = lambda x: env_utils.fourier_points_from_action(x, 10, args.fourier_basis_size)
-        elif args.action_space == "c_norm":
-            action_to_prices_fn = lambda x: 10 * (x / np.sum(x)) if not np.any(x==np.inf) else np.ones(10)/10
-            plotter_person_reaction = None
-
-
-
-        return mySAC(
-            policy,
-            env,
-            non_vec_env=non_vec_env,
+        return SAC(
+            policy=MlpPolicy,
+            env=env,
             batch_size=args.batch_size,
             learning_starts=30,
             verbose=0,
             tensorboard_log=args.rl_log_path,
-            people_reaction_log_dir=os.path.join(args.log_path, "people_reaction/"),
-            plotter_person_reaction=plotter_person_reaction,
-            action_to_prices_fn=action_to_prices_fn,
             learning_rate=args.learning_rate
         )
 
-    # I (Akash) still need to study PPO to understand it, I implemented b/c I know Joe's work used PPO
     elif args.algo == "ppo":
         from stable_baselines import PPO2
 
@@ -118,12 +95,12 @@ def get_agent(env, args, non_vec_env=None):
 
 def args_convert_bool(args):
     """
-    Purpose: Convert args which are specified as strings (e.g. yesterday, energy) into boolean to work with environment
+    Purpose: Convert args which are specified as strings (e.g. energy/price_in_state) into boolean to work with environment
     """
-    if not isinstance(args.yesterday, (bool)):
-        args.yesterday = utils.string2bool(args.yesterday)
-    if not isinstance(args.energy, (bool)):
-        args.energy = utils.string2bool(args.energy)
+    if not isinstance(args.energy_in_state, (bool)):
+        args.energy_in_state = utils.string2bool(args.energy_in_state)
+    if not isinstance(args.price_in_state, (bool)):
+        args.price_in_state = utils.string2bool(args.price_in_state)
     if not isinstance(args.test_planning_env, (bool)):
         args.test_planning_env = utils.string2bool(args.test_planning_env)
 
@@ -171,6 +148,8 @@ def get_environment(args, include_non_vec_env=False):
         reward_function = "log_cost_regularized"
     elif args.reward_function == "scd":
         reward_function = "scaled_cost_distance"
+    elif args.reward_function == "lc":
+        reward_function = "log_cost"
     else:
         reward_function = args.reward_function
 
@@ -181,8 +160,8 @@ def get_environment(args, include_non_vec_env=False):
             response_type_string=args.response,
             one_day=args.one_day,
             number_of_participants=args.num_players,
-            yesterday_in_state=args.yesterday,
-            energy_in_state=args.energy,
+            energy_in_state=args.energy_in_state,
+            price_in_state=args.price_in_state,
             pricing_type=args.pricing_type,
             reward_function=reward_function,
             fourier_basis_size=args.fourier_basis_size,
@@ -196,8 +175,8 @@ def get_environment(args, include_non_vec_env=False):
             response_type_string=args.response,
             one_day=args.one_day,
             number_of_participants=args.num_players,
-            yesterday_in_state=args.yesterday,
-            energy_in_state=args.energy,
+            price_in_state=args.price_in_state,
+            energy_in_state=args.energy_in_state,
             pricing_type=args.pricing_type,
             planning_flag=planning_flag,
             planning_steps=args.planning_steps,
@@ -230,6 +209,12 @@ def parse_args():
 
     parser = argparse.ArgumentParser(
         description="Arguments for running Stable Baseline RL Algorithms on SocialGameEnv"
+    )
+    parser.add_argument(
+        "-w",
+        "--wandb",
+        help="Whether to run wandb",
+        action="store_true"
     )
     parser.add_argument(
         "--env_id",
@@ -293,14 +278,14 @@ def parse_args():
     )
     parser.add_argument(
         "--one_day",
-        help="Specific Day of the year to Train on (default = None, train over entire yr)",
+        help="Specific Day of the year to Train on (default = 15, train on day 15)",
         type=int,
-        default=0,
-        choices=[i for i in range(-1, 366)],
+        default=15,
+        choices=[i for i in range(365)],
     )
     parser.add_argument(
         "--manual_tou_magnitude",
-        help="Relative magnitude of the TOU (should be > 1)",
+        help="Magnitude of the TOU during hours 5,6,7. Sets price in normal hours to 0.103.",
         type=float,
         default=None
     )
@@ -312,15 +297,15 @@ def parse_args():
         choices=[i for i in range(1, 21)],
     )
     parser.add_argument(
-        "--yesterday",
-        help="Whether to include yesterday in state (default = F)",
+        "--energy_in_state",
+        help="Whether to include energy in state (default = F)",
         type=str,
         default="F",
         choices=["T", "F"],
     )
     parser.add_argument(
-        "--energy",
-        help="Whether to include energy in state (default = F)",
+        "--price_in_state",
+        help="Whether to include price in state (default = F)",
         type=str,
         default="F",
         choices=["T", "F"],
@@ -358,7 +343,7 @@ def parse_args():
         help="reward function to test",
         type=str,
         default="lcr",
-        choices=["scaled_cost_distance", "log_cost_regularized", "scd", "lcr"],
+        choices=["scaled_cost_distance", "log_cost_regularized", "log_cost", "scd", "lcr", "lc"],
     )
     parser.add_argument(
         "--learning_rate",
@@ -375,12 +360,18 @@ def parse_args():
 
 
 def main():
+
+
     # Get args
     args = parse_args()
 
     # Print args for reference
     print(args)
     args_convert_bool(args)
+
+    if args.wandb:
+        wandb.init(project="energy-demand-response-game", entity="social-game-rl", sync_tensorboard=True)
+        wandb.config.update(args)
 
     # Create environments
 
@@ -401,8 +392,7 @@ def main():
     print("Beginning Testing!")
     r_real = train(
         model,
-        args.num_steps * (1 + args.planning_steps),
-        planning_steps=args.planning_steps,
+        args.num_steps,
         tb_log_name=args.exp_name
     )
 
