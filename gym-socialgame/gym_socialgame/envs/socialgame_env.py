@@ -20,14 +20,15 @@ class SocialGameEnv(gym.Env):
         response_type_string = "l",
         number_of_participants = 10,
         one_day = 0,
+        price_in_state = True,
         energy_in_state = False,
-        yesterday_in_state = False,
         day_of_week = False,
         pricing_type="TOU",
-        reward_function = "scaled_cost_distance",
-        fourier_basis_size=4,
-        manual_tou_magnitude=None
+        reward_function = "log_cost_regularized",
+        bin_observation_space=False,
+        manual_tou_magnitude=manual_tou_magnitude
         ):
+
         """
         SocialGameEnv for an agent determining incentives in a social game.
 
@@ -41,33 +42,30 @@ class SocialGameEnv(gym.Env):
             one_day: (Int) in range [-1,365] denoting which fixed day to train on .
                     Note: -1 = Random Day, 0 = Train over entire Yr, [1,365] = Day of the Year
             energy_in_state: (Boolean) denoting whether (or not) to include the previous day's energy consumption within the state
-            yesterday_in_state: (Boolean) denoting whether (or not) to append yesterday's price signal to the state
-            manual_tou_magnitude: (Float>1) The relative magnitude of the TOU pricing to the regular pricing
+            yesterday_in_state: [deprecated] (Boolean) denoting whether (or not) to append yesterday's price signal to the state
 
         """
         super(SocialGameEnv, self).__init__()
 
-        #Verify that inputs are valid
-        self.check_valid_init_inputs(
-            action_space_string,
-            response_type_string,
-            number_of_participants,
-            one_day,
-            energy_in_state,
-            yesterday_in_state,
-            fourier_basis_size
-        )
+        #Verify that inputs are valid 
+        self.check_valid_init_inputs(action_space_string, 
+            response_type_string, 
+            number_of_participants, 
+            one_day, energy_in_state, )
+
 
         #Assigning Instance Variables
         self.action_space_string = action_space_string
         self.response_type_string = response_type_string
         self.number_of_participants = number_of_participants
         self.one_day = self._find_one_day(one_day)
+        self.price_in_state = price_in_state
         self.energy_in_state = energy_in_state
-        self.yesterday_in_state = yesterday_in_state
         self.reward_function = reward_function
         self.fourier_basis_size = fourier_basis_size
+        self.bin_observation_space = bin_observation_space
         self.manual_tou_magnitude = manual_tou_magnitude
+        self.hours_in_day = 10
 
         self.day = 0
         self.days_of_week = [0, 1, 2, 3, 4]
@@ -85,9 +83,11 @@ class SocialGameEnv(gym.Env):
         #Cur_iter counts length of trajectory for current step (i.e. cur_iter = i^th hour in a 10-hour trajectory)
         #For our case cur_iter just flips between 0-1 (b/c 1-step trajectory)
         self.curr_iter = 0
-
+        self.total_iter = 0
+        
         #Create Action Space
         self.points_length = 10
+        self.action_length = 10 # number of hours in a day
         self.action_subspace = 3
         self.action_space = self._create_action_space()
 
@@ -128,17 +128,8 @@ class SocialGameEnv(gym.Env):
         """
 
         #TODO: Normalize obs_space !
-        if(self.yesterday_in_state):
-            if(self.energy_in_state):
-                return spaces.Box(low=-np.inf, high=np.inf, shape=(30,), dtype=np.float32)
-            else:
-                return spaces.Box(low=-np.inf, high=np.inf, shape=(20,), dtype=np.float32)
-
-        else:
-            if self.energy_in_state:
-                return spaces.Box(low=-np.inf, high=np.inf, shape=(20,), dtype=np.float32)
-            else:
-                return spaces.Box(low=-np.inf, high=np.inf, shape=(10,), dtype=np.float32)
+        state_count = int(self.price_in_state + self.energy_in_state)
+        return spaces.Box(low=-np.inf, high= np.inf, shape = (self.hours_in_day * state_count,), dtype=np.float32)
 
     def _create_action_space(self):
         """
@@ -158,11 +149,8 @@ class SocialGameEnv(gym.Env):
         if self.action_space_string == "continuous":
             return spaces.Box(low=-1, high=1, shape=(self.points_length,), dtype=np.float32)
 
-        elif self.action_space_string == "continuous_normalized":
-            return spaces.Box(low=0, high=np.inf, shape=(self.points_length,), dtype=np.float32)
-
         elif self.action_space_string == "multidiscrete":
-            discrete_space = [self.action_subspace] * self.points_length
+            discrete_space = [self.action_subspace] * self.action_length  # num of actions times the length of the action space. [a1, a2, a3], [a1, a2, a3] 
             return spaces.MultiDiscrete(discrete_space)
 
         elif self.action_space_string == "fourier":
@@ -199,7 +187,7 @@ class SocialGameEnv(gym.Env):
         my_baseline_energy = pd.DataFrame(data = {"net_energy_use" : working_hour_energy})
 
         for i in range(self.number_of_participants):
-            player = CurtailandShiftPerson(my_baseline_energy, points_multiplier = 10)
+            player = CurtailAndShiftPerson(my_baseline_energy, points_multiplier = 10, response = 'l')
             player_dict['player_{}'.format(i)] = player
 
         return player_dict
@@ -269,7 +257,7 @@ class SocialGameEnv(gym.Env):
         """
         if self.action_space_string == "multidiscrete":
             #Mapping 0 -> 0.0, 1 -> 5.0, 2 -> 10.0
-            points = 5*action
+            points = action * (10 / (self.action_subspace -1))
         elif self.action_space_string == 'continuous':
             #Continuous space is symmetric [-1,1], we map to -> [0,10] by adding 1 and multiplying by 5
             points = 5 * (action + np.ones_like(action))
@@ -337,12 +325,12 @@ class SocialGameEnv(gym.Env):
                 player_energy = energy_consumptions[player_name]
                 player_reward = Reward(player_energy, price, player_min_demand, player_max_demand)
 
-                #if reward_function == "scaled_cost_distance":
-                #    player_ideal_demands = player_reward.ideal_use_calculation()
-                #    reward = player_reward.scaled_cost_distance(player_ideal_demands)
+                if reward_function == "scaled_cost_distance":
+                   player_ideal_demands = player_reward.ideal_use_calculation()
+                   reward = player_reward.scaled_cost_distance(player_ideal_demands)
 
-                #elif reward_function == "log_cost_regularized":
-                #    reward = player_reward.log_cost_regularized()
+                elif reward_function == "log_cost_regularized":
+                   reward = player_reward.log_cost_regularized()
 
                 reward = player_reward.log_cost_regularized()
 
@@ -376,7 +364,7 @@ class SocialGameEnv(gym.Env):
                 action = np.clip(action, -1, 1)
 
             elif self.action_space_string == 'multidiscrete':
-                action = np.clip(action, 0, 2)
+                action = np.clip(action, 0, self.action_subspace - 1)
 
             elif self.action_space_string == "fourier":
                 assert False, "Fourier basis mode, got incorrect action. This should never happen. action: {}".format(action)
@@ -385,6 +373,7 @@ class SocialGameEnv(gym.Env):
         prev_price = self.prices[(self.day)]
         self.day = (self.day + 1) % 365
         self.curr_iter += 1
+        self.total_iter +=1
 
         done = self.curr_iter > 0
 
@@ -403,19 +392,21 @@ class SocialGameEnv(gym.Env):
 
     def _get_observation(self):
         prev_price = self.prices[ (self.day - 1) % 365]
-        next_observation = self.prices[self.day]
+        next_price = self.prices[self.day]
 
-        if(self.yesterday_in_state):
-            if self.energy_in_state:
-                return np.concatenate((next_observation, np.concatenate((prev_price, self.prev_energy))))
-            else:
-                return np.concatenate((next_observation, prev_price))
+        if self.bin_observation_space:
+            self.prev_energy = np.round(self.prev_energy, -1)
 
-        elif self.energy_in_state:
-            return np.concatenate((next_observation, self.prev_energy))
+        next_observation = np.array([])
 
-        else:
-            return next_observation
+        if self.price_in_state:
+            next_observation = np.concatenate((next_observation, next_price))       
+
+        if self.energy_in_state:
+            next_observation = np.concatenate((next_observation, self.prev_energy))
+
+        return next_observation
+
 
     def reset(self):
         """ Resets the environment on the current day """
@@ -473,7 +464,6 @@ class SocialGameEnv(gym.Env):
         assert isinstance(energy_in_state, bool), "Variable one_day is not of type Boolean. Instead got type {}".format(type(energy_in_state))
 
         #Checking that yesterday_in_state is valid
-        assert isinstance(yesterday_in_state, bool), "Variable one_day is not of type Boolean. Instead got type {}".format(type(yesterday_in_state))
         print("all inputs valid")
 
         assert isinstance(

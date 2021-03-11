@@ -29,8 +29,11 @@ import utils
 
 import os
 
+import datetime as dt
+import wandb
 
-def train(agent, num_steps, planning_steps, tb_log_name):
+
+def train(agent, num_steps, planning_steps):
     """
     Purpose: Train agent in env, and then call eval function to evaluate policy
     """
@@ -40,7 +43,6 @@ def train(agent, num_steps, planning_steps, tb_log_name):
         total_timesteps=num_steps,
         log_interval=10,
         planning_steps=planning_steps,
-        tb_log_name=tb_log_name
     )
 
 
@@ -73,7 +75,6 @@ def get_agent(env, args, non_vec_env=None):
     Exceptions: Raises exception if args.algo unknown (not needed b/c we filter in the parser, but I added it for modularity)
     """
     if args.algo == "sac":
-        from stableBaselines.stable_baselines.sac.sac import SAC as mySAC
         from stable_baselines.sac.policies import MlpPolicy as policy
         plotter_person_reaction = utils.plotter_person_reaction
         action_to_prices_fn = lambda x: (x + 1) * 5 #normal continuous
@@ -84,25 +85,19 @@ def get_agent(env, args, non_vec_env=None):
             action_to_prices_fn = lambda x: 10 * (x / np.sum(x)) if not np.any(x==np.inf) else np.ones(10)/10
             plotter_person_reaction = None
 
+        from stable_baselines import SAC
 
-
-        return mySAC(
+        return SAC(
             policy,
             env,
-            non_vec_env=non_vec_env,
             batch_size=args.batch_size,
             learning_starts=30,
             verbose=0,
-            tensorboard_log=args.rl_log_path,
-            people_reaction_log_dir=os.path.join(args.log_path, "people_reaction/"),
-            plotter_person_reaction=plotter_person_reaction,
-            action_to_prices_fn=action_to_prices_fn,
-            learning_rate=args.learning_rate
         )
 
     # I (Akash) still need to study PPO to understand it, I implemented b/c I know Joe's work used PPO
     elif args.algo == "ppo":
-        from stable_baselines import PPO2
+        from stable_baselines import PPO
 
         if args.policy_type == "mlp":
             from stable_baselines.common.policies import MlpPolicy as policy
@@ -110,7 +105,7 @@ def get_agent(env, args, non_vec_env=None):
         elif args.policy_type == "lstm":
             from stable_baselines.common.policies import MlpLstmPolicy as policy
 
-        return PPO2(policy, env, verbose=0, tensorboard_log=args.rl_log_path)
+        return PPO(policy, env, verbose=0, tensorboard_log=args.rl_log_path)
 
     else:
         raise NotImplementedError("Algorithm {} not supported. :( ".format(args.algo))
@@ -120,16 +115,14 @@ def args_convert_bool(args):
     """
     Purpose: Convert args which are specified as strings (e.g. yesterday, energy) into boolean to work with environment
     """
-    if not isinstance(args.yesterday, (bool)):
-        args.yesterday = utils.string2bool(args.yesterday)
-    if not isinstance(args.energy, (bool)):
-        args.energy = utils.string2bool(args.energy)
+    if not isinstance(args.price_in_state, (bool)):
+        args.price_in_state = utils.string2bool(args.price_in_state)
+    if not isinstance(args.energy_in_state, (bool)):
+        args.energy_in_state = utils.string2bool(args.energy_in_state)
     if not isinstance(args.test_planning_env, (bool)):
         args.test_planning_env = utils.string2bool(args.test_planning_env)
-
-    print(args.test_planning_env)
-    print(args.yesterday)
-
+    if not isinstance(args.bin_observation_space, (bool)):
+        args.bin_observation_space = utils.string2bool(args.bin_observation_space)
 
 def get_environment(args, include_non_vec_env=False):
     """
@@ -141,10 +134,8 @@ def get_environment(args, include_non_vec_env=False):
     Returns: Environment with action space compatible with algo
     """
     # Convert string args (which are supposed to be bool) into actual boolean values
-
-    print(args.planning_steps, args.test_planning_env)
-    planning = (args.planning_steps > 0) or args.test_planning_env
-
+    args_convert_bool(args)
+    
     # SAC only works in continuous environment
     if args.algo == "sac":
         if args.action_space == "fourier":
@@ -161,8 +152,6 @@ def get_environment(args, include_non_vec_env=False):
         )
         action_space_string = convert_action_space_str(args.action_space)
 
-    planning_flag = args.planning_steps > 0
-
     if args.env_id == "hourly":
         env_id = "_hourly-v0"
     elif args.env_id == "monthly":
@@ -177,37 +166,20 @@ def get_environment(args, include_non_vec_env=False):
     else:
         reward_function = args.reward_function
 
-    if not planning:
-        socialgame_env = gym.make(
-            "gym_socialgame:socialgame{}".format(env_id),
-            action_space_string=action_space_string,
-            response_type_string=args.response,
-            one_day=args.one_day,
-            number_of_participants=args.num_players,
-            yesterday_in_state=args.yesterday,
-            energy_in_state=args.energy,
-            pricing_type=args.pricing_type,
-            reward_function=reward_function,
-            fourier_basis_size=args.fourier_basis_size,
-            manual_tou_magnitude=args.manual_tou_magnitude
+    socialgame_env = gym.make(
+        "gym_socialgame:socialgame{}".format(env_id),
+        action_space_string=action_space_string,
+        response_type_string=args.response,
+        one_day=args.one_day,
+        number_of_participants=args.num_players,
+        price_in_state = args.price_in_state,
+        energy_in_state=args.energy_in_state,
+        pricing_type=args.pricing_type,
+        reward_function=reward_function,
+        bin_observation_space = args.bin_observation_space,
+        manual_tou_magnitude=args.manual_tou_magnitude
         )
-    else:
-        # go into the planning mode
-        socialgame_env = gym.make(
-            "gym_socialgame:socialgame{}".format("_planning-v0"),
-            action_space_string=action_space_string,
-            response_type_string=args.response,
-            one_day=args.one_day,
-            number_of_participants=args.num_players,
-            yesterday_in_state=args.yesterday,
-            energy_in_state=args.energy,
-            pricing_type=args.pricing_type,
-            planning_flag=planning_flag,
-            planning_steps=args.planning_steps,
-            planning_model_type=args.planning_model,
-            own_tb_log=args.rl_log_path,
-            reward_function=reward_function
-        )
+
 
     # Check to make sure any new changes to environment follow OpenAI Gym API
     check_env(socialgame_env)
@@ -265,7 +237,7 @@ def parse_args():
         "--num_steps",
         help="Number of timesteps to train algo",
         type=int,
-        default=10000,
+        default=50000,
     )
     # Note: only some algos (e.g. PPO) can use LSTM Policy the feature below is for future testing
     parser.add_argument(
@@ -281,13 +253,6 @@ def parse_args():
         choices=["c", "c_norm", "d", "fourier"],
     )
     parser.add_argument(
-        "--fourier_basis_size",
-        help="Fourier basis size to use when using fourier action space",
-        type=int,
-        default=4,
-        choices=list(range(100))
-    )
-    parser.add_argument(
         "--response",
         help="Player response function (l = linear, t = threshold_exponential, s = sinusoidal",
         type=str,
@@ -298,14 +263,8 @@ def parse_args():
         "--one_day",
         help="Specific Day of the year to Train on (default = None, train over entire yr)",
         type=int,
-        default=0,
+        default=15,
         choices=[i for i in range(-1, 366)],
-    )
-    parser.add_argument(
-        "--manual_tou_magnitude",
-        help="Relative magnitude of the TOU (should be > 1)",
-        type=float,
-        default=None
     )
     parser.add_argument(
         "--num_players",
@@ -315,18 +274,24 @@ def parse_args():
         choices=[i for i in range(1, 21)],
     )
     parser.add_argument(
-        "--yesterday",
-        help="Whether to include yesterday in state (default = F)",
+        "--price_in_state",
+        help = "Is price in the state",
+        type = str,
+        default = "T",
+        choices = ["T", "F"]
+    )
+    parser.add_argument(
+        "--energy_in_state",
+        help="Whether to include energy in state (default = F)",
         type=str,
         default="F",
         choices=["T", "F"],
     )
     parser.add_argument(
-        "--energy",
-        help="Whether to include energy in state (default = F)",
+        "--exp_name", 
+        help="experiment_name", 
         type=str,
-        default="F",
-        choices=["T", "F"],
+        default=str(dt.datetime.today())
     )
     parser.add_argument(
         "--planning_steps",
@@ -369,6 +334,20 @@ def parse_args():
         type=float,
         default=3e-4,
     )
+    parser.add_argument(
+        "--bin_observation_space",
+        help = "Bin the observations",
+        type = str,
+        default = "F",
+        choices = ["T", "F"]
+    )
+    parser.add_argument(
+        "--manual_tou_magnitude",
+        help = "Exogenous setting of grid price difference",
+        type = float,
+        default=.3,
+    )
+
     args = parser.parse_args()
 
     args.log_path = os.path.join(args.base_log_dir, args.exp_name + "/")
@@ -384,6 +363,8 @@ def main():
     # Print args for reference
     print(args)
     args_convert_bool(args)
+
+    wandb.init(project="energy-demand-response-game", entity="social-game-rl", sync_tensorboard=True)
 
     print("after conversion")
     print(args)
