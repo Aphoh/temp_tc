@@ -25,10 +25,7 @@ class SocialGameEnv(gym.Env):
         energy_in_state = False,
         day_of_week = False,
         pricing_type="TOU",
-<<<<<<< HEAD
         buffer='gaussian',
-=======
->>>>>>> main
         reward_function = "log_cost_regularized",
         fourier_basis_size=4,
         manual_tou_magnitude=None
