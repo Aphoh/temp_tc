@@ -26,7 +26,7 @@ class SocialGameEnv(gym.Env):
         pricing_type="TOU",
         reward_function = "log_cost_regularized",
         bin_observation_space=False,
-        manual_tou_magnitude=manual_tou_magnitude
+        manual_tou_magnitude=.3,
         ):
 
         """
@@ -56,7 +56,7 @@ class SocialGameEnv(gym.Env):
             one_day,
             price_in_state,
             energy_in_state,
-            fourier_basis_size # maybe error
+            # fourier_basis_size # maybe error
         )
 
         if action_space_string == "continuous_normalized" and reward_function == "log_cost_regularized":
@@ -70,7 +70,6 @@ class SocialGameEnv(gym.Env):
         self.price_in_state = price_in_state
         self.energy_in_state = energy_in_state
         self.reward_function = reward_function
-        self.fourier_basis_size = fourier_basis_size
         self.bin_observation_space = bin_observation_space
         self.manual_tou_magnitude = manual_tou_magnitude
         self.hours_in_day = 10
@@ -158,7 +157,7 @@ class SocialGameEnv(gym.Env):
             return spaces.Box(low=-1, high=1, shape=(self.action_length,), dtype=np.float32)
 
         elif self.action_space_string == "continuous_normalized":
-            return spaces.Box(low = 0, np.inf, shape = (self.action_length,), dtype=np.float32)
+            return spaces.Box(low = 0, high = np.inf, shape = (self.action_length,), dtype=np.float32)
 
         elif self.action_space_string == "multidiscrete":
             discrete_space = [self.action_subspace] * self.action_length  # num of actions times the length of the action space. [a1, a2, a3], [a1, a2, a3] 
@@ -472,11 +471,11 @@ class SocialGameEnv(gym.Env):
         assert isinstance(energy_in_state, bool), "Variable one_day is not of type Boolean. Instead got type {}".format(type(energy_in_state))
         print("all inputs valid")
 
-        assert isinstance(
-            fourier_basis_size, int
-        ), "Variable fourier_basis_size is not of type int. Instead got type {}".format(
-            type(fourier_basis_size)
-        )
-        assert fourier_basis_size > 0, "Variable fourier_basis_size must be positive. Got {}".format(fourier_basis_size)
+        # assert isinstance(
+        #     fourier_basis_size, int
+        # ), "Variable fourier_basis_size is not of type int. Instead got type {}".format(
+        #     type(fourier_basis_size)
+        # )
+        # assert fourier_basis_size > 0, "Variable fourier_basis_size must be positive. Got {}".format(fourier_basis_size)
 
 
