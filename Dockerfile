@@ -17,7 +17,4 @@ RUN pip install -r ./requirements.txt
 COPY ./gym-socialgame/ ./gym-socialgame/
 RUN pip install -e ./gym-socialgame/ 
 
-COPY ./rl_algos/ ./rl_algos/
-RUN pip install -e ./rl_algos/stableBaselines/
-
 USER $UNAME
