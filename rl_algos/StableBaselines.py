@@ -81,7 +81,7 @@ def get_agent(env, args, non_vec_env=None):
         )
 
     elif args.algo == "ppo":
-        from stable_baselines import PPO
+        from stable_baselines import PPO2
 
         if args.policy_type == "mlp":
             from stable_baselines.common.policies import MlpPolicy as policy
@@ -89,7 +89,7 @@ def get_agent(env, args, non_vec_env=None):
         elif args.policy_type == "lstm":
             from stable_baselines.common.policies import MlpLstmPolicy as policy
 
-        return PPO(policy, env, verbose=0, tensorboard_log=args.rl_log_path)
+        return PPO2(policy, env, verbose=0, tensorboard_log=args.rl_log_path)
 
     else:
         raise NotImplementedError("Algorithm {} not supported. :( ".format(args.algo))
@@ -209,9 +209,6 @@ def parse_args():
         "--algo", help="Stable Baselines Algorithm", type=str, choices=["sac", "ppo"]
     )
     parser.add_argument(
-        "--exp_name", help="Name of the experiment. Used to name log files, etc.", type=str
-    )
-    parser.add_argument(
         "--base_log_dir",
         help="Base directory for tensorboard logs",
         type=str,
@@ -262,7 +259,7 @@ def parse_args():
         "--manual_tou_magnitude",
         help="Magnitude of the TOU during hours 5,6,7. Sets price in normal hours to 0.103.",
         type=float,
-        default=None
+        default=.4
     )
     parser.add_argument(
         "--num_players",
@@ -339,12 +336,7 @@ def parse_args():
         default = "F",
         choices = ["T", "F"]
     )
-    parser.add_argument(
-        "--manual_tou_magnitude",
-        help = "Exogenous setting of grid price difference",
-        type = float,
-        default=.3,
-    )
+
 
     args = parser.parse_args()
 
