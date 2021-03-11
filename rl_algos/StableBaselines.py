@@ -1,24 +1,16 @@
 import argparse
 import numpy as np
 import gym
-from stable_baselines import SAC
-from stable_baselines.sac.policies import MlpPolicy
-from stable_baselines.common.vec_env import (DummyVecEnv, VecCheckNan, VecNormalize)
+from stable_baselines3 import SAC, PPO
+from stable_baselines3.sac.policies import MlpPolicy as SACMlpPolicy
+from stable_baselines3.ppo.policies import MlpPolicy as PPOMlpPolicy
+from stable_baselines3.common.vec_env import (DummyVecEnv, VecCheckNan, VecNormalize)
+from stable_baselines3.common.monitor import Monitor
 
-from stable_baselines.common.evaluation import evaluate_policy
-from stable_baselines.common.env_checker import check_env
+from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.env_checker import check_env
 
 import gym_socialgame.envs.utils as env_utils
-
-import tensorflow as tf
-tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-
-from tensorboard_logger import (  # pylint: disable=import-error, no-name-in-module
-    configure as tb_configure,
-)
-from tensorboard_logger import (  # pylint: disable=import-error, no-name-in-module
-    log_value as tb_log_value,
-)
 
 import utils
 import wandb
@@ -67,27 +59,26 @@ def get_agent(env, args, non_vec_env=None):
 
     Exceptions: Raises exception if args.algo unknown (not needed b/c we filter in the parser, but I added it for modularity)
     """
+    print(args.log_path)
     if args.algo == "sac":
         return SAC(
-            policy=MlpPolicy,
+            policy=SACMlpPolicy,
             env=env,
             batch_size=args.batch_size,
             learning_starts=30,
             verbose=0,
-            tensorboard_log=args.rl_log_path,
+            tensorboard_log=args.log_path,
             learning_rate=args.learning_rate
         )
 
     elif args.algo == "ppo":
-        from stable_baselines import PPO2
+        return PPO(
+                policy=PPOMlpPolicy,
+                env=env,
+                verbose=2,
+                n_steps=128,
+                tensorboard_log=args.log_path)
 
-        if args.policy_type == "mlp":
-            from stable_baselines.common.policies import MlpPolicy as policy
-
-        elif args.policy_type == "lstm":
-            from stable_baselines.common.policies import MlpLstmPolicy as policy
-
-        return PPO2(policy, env, verbose=0, tensorboard_log=args.rl_log_path)
 
     else:
         raise NotImplementedError("Algorithm {} not supported. :( ".format(args.algo))
@@ -181,7 +172,7 @@ def get_environment(args, include_non_vec_env=False):
             planning_flag=planning_flag,
             planning_steps=args.planning_steps,
             planning_model_type=args.planning_model,
-            own_tb_log=args.rl_log_path,
+            own_tb_log=args.log_path,
             reward_function=reward_function
         )
 
@@ -191,7 +182,7 @@ def get_environment(args, include_non_vec_env=False):
     # temp_step_fnc = socialgame_env.step
 
     # Using env_fn so we can create vectorized environment.
-    env_fn = lambda: socialgame_env
+    env_fn = lambda: Monitor(socialgame_env)
     venv = DummyVecEnv([env_fn])
     env = VecNormalize(venv)
 
@@ -354,7 +345,6 @@ def parse_args():
     args = parser.parse_args()
 
     args.log_path = os.path.join(args.base_log_dir, args.exp_name + "/")
-    args.rl_log_path = os.path.join(args.log_path, "rl/")
 
     return args
 

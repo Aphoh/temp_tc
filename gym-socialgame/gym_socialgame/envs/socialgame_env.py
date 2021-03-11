@@ -4,8 +4,6 @@ from gym import spaces
 import numpy as np
 import random
 
-import tensorflow as tf
-
 from gym_socialgame.envs.utils import price_signal, fourier_points_from_action
 from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
@@ -346,7 +344,7 @@ class SocialGameEnv(gym.Env):
 
                 total_reward += reward
 
-        return total_reward
+        return total_reward / self.number_of_participants
 
     def step(self, action):
         """
