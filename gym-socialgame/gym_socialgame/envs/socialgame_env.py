@@ -20,7 +20,7 @@ class SocialGameEnv(gym.Env):
         response_type_string = "l",
         number_of_participants = 10,
         one_day = 0,
-        price_in_state = True,
+        price_in_state= False,
         energy_in_state = False,
         day_of_week = False,
         pricing_type="TOU",
@@ -36,23 +36,31 @@ class SocialGameEnv(gym.Env):
             Then, environment advances one-day and agent is told that the episode has finished.)
 
         Args:
-            action_space_string: (String) either "continuous", "multidiscrete", or "fourier"
+            action_space_string: (String) either "continuous", "continuous_normalized", "multidiscrete", or "fourier"
             response_type_string: (String) either "t", "s", "l" , denoting whether the office's response function is threshold, sinusoidal, or linear
             number_of_participants: (Int) denoting the number of players in the social game (must be > 0 and < 20)
             one_day: (Int) in range [-1,365] denoting which fixed day to train on .
                     Note: -1 = Random Day, 0 = Train over entire Yr, [1,365] = Day of the Year
-            energy_in_state: (Boolean) denoting whether (or not) to include the previous day's energy consumption within the state
-            yesterday_in_state: [deprecated] (Boolean) denoting whether (or not) to append yesterday's price signal to the state
+            price_in_state: (Boolean) denoting whether (or not) to include the current grid price in the state
+            energy_in_state: (Boolean) denoting whether (or not) to append yesterday's grid price to the state
+            manual_tou_magnitude: (Float>1) The relative magnitude of the TOU pricing to the regular pricing
 
         """
         super(SocialGameEnv, self).__init__()
 
-        #Verify that inputs are valid 
-        self.check_valid_init_inputs(action_space_string, 
-            response_type_string, 
-            number_of_participants, 
-            one_day, energy_in_state, )
+        #Verify that inputs are valid
+        self.check_valid_init_inputs(
+            action_space_string,
+            response_type_string,
+            number_of_participants,
+            one_day,
+            price_in_state,
+            energy_in_state,
+            fourier_basis_size # maybe error
+        )
 
+        if action_space_string == "continuous_normalized" and reward_function == "log_cost_regularized":
+            print("WARNING: You should probably be using log_cost with the c_norm action space")
 
         #Assigning Instance Variables
         self.action_space_string = action_space_string
@@ -86,9 +94,9 @@ class SocialGameEnv(gym.Env):
         self.total_iter = 0
         
         #Create Action Space
-        self.points_length = 10
         self.action_length = 10 # number of hours in a day
         self.action_subspace = 3
+        self.action_subspace = 11
         self.action_space = self._create_action_space()
 
         #Create Players
@@ -117,8 +125,7 @@ class SocialGameEnv(gym.Env):
     def _create_observation_space(self):
         """
         Purpose: Returns the observation space.
-        If the state space includes yesterday, then it is +10 dim for yesterday's price signal
-        If the state space includes energy_in_state, then it is +1 dim for yesterday's energy
+        dim is 10 for previous days energy usage, 10 for prices
 
         Args:
             None
@@ -127,9 +134,10 @@ class SocialGameEnv(gym.Env):
             Action Space for environment based on action_space_str
         """
 
+        dim = self.hours_in_day*np.sum([self.price_in_state, self.energy_in_state])
         #TODO: Normalize obs_space !
-        state_count = int(self.price_in_state + self.energy_in_state)
-        return spaces.Box(low=-np.inf, high= np.inf, shape = (self.hours_in_day * state_count,), dtype=np.float32)
+        return spaces.Box(low=-np.inf, high=np.inf, shape=(dim,), dtype=np.float32)
+
 
     def _create_action_space(self):
         """
@@ -147,18 +155,14 @@ class SocialGameEnv(gym.Env):
 
         #Making a symmetric, continuous space to help learning for continuous control (suggested in StableBaselines doc.)
         if self.action_space_string == "continuous":
-            return spaces.Box(low=-1, high=1, shape=(self.points_length,), dtype=np.float32)
+            return spaces.Box(low=-1, high=1, shape=(self.action_length,), dtype=np.float32)
+
+        elif self.action_space_string == "continuous_normalized":
+            return spaces.Box(low = 0, np.inf, shape = (self.action_length,), dtype=np.float32)
 
         elif self.action_space_string == "multidiscrete":
             discrete_space = [self.action_subspace] * self.action_length  # num of actions times the length of the action space. [a1, a2, a3], [a1, a2, a3] 
             return spaces.MultiDiscrete(discrete_space)
-
-        elif self.action_space_string == "fourier":
-            return spaces.Box(
-                low=-2, high=2, shape=(2*self.fourier_basis_size - 1,), dtype=np.float32
-            )
-
-
 
     def _create_agents(self):
         """
@@ -216,7 +220,7 @@ class SocialGameEnv(gym.Env):
             print("Using manual tou pricing", price[0])
             return price
 
-        if self.one_day != 0:
+        if self.one_day is not None:
             print("Single Day")
             # If one_day we repeat the price signals from a fixed day
             # Tweak One_Day Price Signal HERE
@@ -266,7 +270,7 @@ class SocialGameEnv(gym.Env):
             points = 10 * (action / np.sum(action))
 
         elif self.action_space_string == "fourier":
-            points = fourier_points_from_action(action, self.points_length, self.fourier_basis_size)
+            points = fourier_points_from_action(action, self.action_length, self.fourier_basis_size)
 
         return points
 
@@ -301,7 +305,7 @@ class SocialGameEnv(gym.Env):
         energy_consumptions["avg"] = total_consumption / self.number_of_participants
         return energy_consumptions
 
-    def _get_reward(self, price, energy_consumptions, reward_function = "scaled_cost_distance"):
+    def _get_reward(self, price, energy_consumptions, reward_function = "log_cost_regularized"):
         """
         Purpose: Compute reward given price signal and energy consumption of the office
 
@@ -332,11 +336,12 @@ class SocialGameEnv(gym.Env):
                 elif reward_function == "log_cost_regularized":
                    reward = player_reward.log_cost_regularized()
 
-                reward = player_reward.log_cost_regularized()
+                elif reward_function == "log_cost":
+                    reward = player_reward.log_cost()
 
                 total_reward += reward
 
-        return total_reward / self.number_of_participants
+        return total_reward
 
     def step(self, action):
         """
@@ -361,7 +366,7 @@ class SocialGameEnv(gym.Env):
             print("made it within the if statement in SG_E that tests if the the action space doesn't have the action")
             action = np.asarray(action)
             if self.action_space_string == 'continuous':
-                action = np.clip(action, -1, 1)
+                action = np.clip(action, -1, 1) #TODO: check if correct
 
             elif self.action_space_string == 'multidiscrete':
                 action = np.clip(action, 0, self.action_subspace - 1)
@@ -420,7 +425,7 @@ class SocialGameEnv(gym.Env):
 
 
     def check_valid_init_inputs(self, action_space_string: str, response_type_string: str, number_of_participants = 10,
-                one_day = False, energy_in_state = False, yesterday_in_state = False, fourier_basis_size = 4):
+                one_day = False, price_in_state = False, energy_in_state = False, fourier_basis_size = 4):
 
         """
         Purpose: Verify that all initialization variables are valid
@@ -430,14 +435,14 @@ class SocialGameEnv(gym.Env):
             response_type_string: String either "t", "s", "l" , denoting whether the office's response function is threshold, sinusoidal, or linear
             number_of_participants: Int denoting the number of players in the social game (must be > 0 and < 20)
             one_day: Boolean denoting whether (or not) the environment is FIXED on ONE price signal
-            energy_in_state: Boolean denoting whether (or not) to include the previous day's energy consumption within the state
-            yesterday_in_state: Boolean denoting whether (or not) to append yesterday's price signal to the state
+            price_in_state: (Boolean) denoting whether (or not) to include the current grid price in the state
+            energy_in_state: (Boolean) denoting whether (or not) to include the energy usage in the state
 
         Exceptions:
             Raises AssertionError if action_space_string is not a String or if it is not either "continuous", or "multidiscrete"
             Raises AssertionError if response_type_string is not a String or it is is not either "t","s","l"
             Raises AssertionError if number_of_participants is not an integer, is less than 1,  or greater than 20 (upper bound set arbitrarily for comp. purposes).
-            Raises AssertionError if any of {one_day, energy_in_state, yesterday_in_state} is not a Boolean
+            Raises AssertionError if any of {one_day, price_in_state, energy_in_state} is not a Boolean
         """
 
         #Checking that action_space_string is valid
@@ -460,10 +465,11 @@ class SocialGameEnv(gym.Env):
         assert isinstance(one_day, int), "Variable one_day is not of type Int. Instead got type {}".format(type(one_day))
         assert 366 > one_day and one_day > -2, "Variable one_day out of range [-1,365]. Got one_day = {}".format(one_day)
 
-        #Checking that energy_in_state is valid
-        assert isinstance(energy_in_state, bool), "Variable one_day is not of type Boolean. Instead got type {}".format(type(energy_in_state))
+        #Checking that price_in_state is valid
+        assert isinstance(price_in_state, bool), "Variable one_day is not of type Boolean. Instead got type {}".format(type(price_in_state))
 
         #Checking that yesterday_in_state is valid
+        assert isinstance(energy_in_state, bool), "Variable one_day is not of type Boolean. Instead got type {}".format(type(energy_in_state))
         print("all inputs valid")
 
         assert isinstance(
