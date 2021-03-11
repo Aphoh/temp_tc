@@ -25,7 +25,10 @@ class SocialGameEnv(gym.Env):
         energy_in_state = False,
         day_of_week = False,
         pricing_type="TOU",
+<<<<<<< HEAD
         buffer='gaussian',
+=======
+>>>>>>> main
         reward_function = "log_cost_regularized",
         fourier_basis_size=4,
         manual_tou_magnitude=None
@@ -346,13 +349,14 @@ class SocialGameEnv(gym.Env):
                     player_ideal_demands = player_reward.ideal_use_calculation()
                     reward = player_reward.scaled_cost_distance(player_ideal_demands)
 
-                #echanges sh to bashlif reward_function == "log_cost_regularized":
-                #    reward = player_reward.log_cost_regularized()
+                elif reward_function == "log_cost_regularized":
+                    reward = player_reward.log_cost_regularized()
 
-                # reward = player_reward.log_cost_regularized() + self.buffer.logprob(player_energy)
+                elif reward_function == "log_cost":
+                    reward = player_reward.log_cost()
 
                 smirl_weight = 0.3
-                reward = player_reward.log_cost_regularized() + smirl_weight * self.buffer.logprob(self._get_observation())
+                reward += smirl_weight * self.buffer.logprob(self._get_observation())
 
                 total_reward += reward
 
