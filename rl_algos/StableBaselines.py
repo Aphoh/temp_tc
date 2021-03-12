@@ -31,8 +31,11 @@ import wandb
 import ray
 import ray.rllib.agents.ppo as ppo
 
+from ray.tune.integration.wandb import wandb_mixin
+
 # import IPython
 
+# @wandb_mixin
 def train(agent, num_steps, tb_log_name, args = None, library="sb"):
     """
     Purpose: Train agent in env, and then call eval function to evaluate policy
@@ -44,11 +47,13 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb"):
             log_interval=10,
             tb_log_name=tb_log_name
         )
+
     elif library=="rllib":
 
         import ray
         from ray import tune
-        from ray.tune.integration.wandb import WandbLoggerCallback
+        from ray.tune.logger import DEFAULT_LOGGERS
+        from ray.tune.integration.wandb import WandbLogger
         from ray.tune.logger import pretty_print
 
         ray.init()
@@ -57,22 +62,30 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb"):
         config["num_workers"] = 1
         config["env"] = SocialGameEnvRLLib
         config["env_config"] = vars(args)
+        # config["wandb"] = {"project":"energy-demand-response-game",
+        #                 "api_key":"7385069f57b00860da0e7add0bdc6eba19fb07cd",   #"~/rl_algos/api_key.txt",
+        # }
         
         tune.run(
             agent,
             stop = {"training_iteration": num_steps},
             config = config,
-            callbacks = [WandbLoggerCallback(
-                # api_key = leaving this blank, hoping that it prompts one during the command line 
-                project= "energy-demand-response-game"
-            )
-            ]
+            # callbacks = [WandbLoggerCallback(
+            #     api_key = "7385069f57b00860da0e7add0bdc6eba19fb07cd",
+            #     # entity="social-game-rl",
+            #     project= "energy-demand-response-game",
+            #     log_config=True
+            # )
+            # ]
+            loggers = DEFAULT_LOGGERS #[WandbLogger],
         )
 
+        # updated_agent = agent(config=config, env= SocialGameEnvRLLib)
+        
         # for i in range(num_steps):
-        #     IPython.embed()
-        #     agent.train()
-
+        #     # IPython.embed()
+        #     result = updated_agent.train()
+        #     wandb.log(result)
 
 def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
     """
