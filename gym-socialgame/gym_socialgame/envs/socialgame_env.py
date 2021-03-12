@@ -190,7 +190,7 @@ class SocialGameEnv(gym.Env):
         my_baseline_energy = pd.DataFrame(data = {"net_energy_use" : working_hour_energy})
 
         for i in range(self.number_of_participants):
-            player = CurtailAndShiftPerson(my_baseline_energy, points_multiplier = 10, response = 'l')
+            player = DeterministicFunctionPerson(my_baseline_energy, points_multiplier = 10, response = 'l')
             player_dict['player_{}'.format(i)] = player
 
         return player_dict
@@ -327,7 +327,6 @@ class SocialGameEnv(gym.Env):
                 player_max_demand = player.get_max_demand()
                 player_energy = energy_consumptions[player_name]
                 player_reward = Reward(player_energy, price, player_min_demand, player_max_demand)
-
                 if reward_function == "scaled_cost_distance":
                    player_ideal_demands = player_reward.ideal_use_calculation()
                    reward = player_reward.scaled_cost_distance(player_ideal_demands)
@@ -337,6 +336,10 @@ class SocialGameEnv(gym.Env):
 
                 elif reward_function == "log_cost":
                     reward = player_reward.log_cost()
+                
+                else:
+                    print("Reward function not recognized")
+                    raise AssertionError
 
                 total_reward += reward
 
@@ -478,4 +481,23 @@ class SocialGameEnv(gym.Env):
         # )
         # assert fourier_basis_size > 0, "Variable fourier_basis_size must be positive. Got {}".format(fourier_basis_size)
 
+class SocialGameEnvRLLib(SocialGameEnv):
+    def __init__(self, env_config):
+        super().__init__(
+            action_space_string = env_config["action_space_string"],
+            response_type_string = env_config["response_type_string"],
+            number_of_participants = env_config["number_of_participants"],
+            one_day = env_config["one_day"],
+            price_in_state= env_config["price_in_state"],
+            energy_in_state = env_config["energy_in_state"],
+            # day_of_week = env_config["day_of_week"],
+            pricing_type=env_config["pricing_type"],
+            reward_function = env_config["reward_function"],
+            bin_observation_space=env_config["bin_observation_space"],
+            manual_tou_magnitude=env_config["manual_tou_magnitude"],
+        )
 
+        print("Initialized RLLib child class")
+
+
+        
