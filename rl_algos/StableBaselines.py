@@ -33,7 +33,7 @@ import ray.rllib.agents.ppo as ppo
 
 from ray.tune.integration.wandb import wandb_mixin
 
-# import IPython
+import pdb
 
 # @wandb_mixin
 def train(agent, num_steps, tb_log_name, args = None, library="sb"):
@@ -66,26 +66,26 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb"):
         #                 "api_key":"7385069f57b00860da0e7add0bdc6eba19fb07cd",   #"~/rl_algos/api_key.txt",
         # }
         
-        tune.run(
-            agent,
-            stop = {"training_iteration": num_steps},
-            config = config,
-            # callbacks = [WandbLoggerCallback(
-            #     api_key = "7385069f57b00860da0e7add0bdc6eba19fb07cd",
-            #     # entity="social-game-rl",
-            #     project= "energy-demand-response-game",
-            #     log_config=True
-            # )
-            # ]
-            loggers = DEFAULT_LOGGERS #[WandbLogger],
-        )
+        # tune.run(
+        #     agent,
+        #     stop = {"training_iteration": num_steps},
+        #     config = config,
+        #     # callbacks = [WandbLoggerCallback(
+        #     #     api_key = "7385069f57b00860da0e7add0bdc6eba19fb07cd",
+        #     #     # entity="social-game-rl",
+        #     #     project= "energy-demand-response-game",
+        #     #     log_config=True
+        #     # )
+        #     # ]
+        #     loggers = DEFAULT_LOGGERS #[WandbLogger],
+        # )
 
-        # updated_agent = agent(config=config, env= SocialGameEnvRLLib)
+        updated_agent = ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
         
-        # for i in range(num_steps):
-        #     # IPython.embed()
-        #     result = updated_agent.train()
-        #     wandb.log(result)
+        for i in range(num_steps):
+            pdb.set_trace()
+            result = updated_agent.train()
+            wandb.log(result)
 
 def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
     """
@@ -115,31 +115,34 @@ def get_agent(env, args, non_vec_env=None):
 
     Exceptions: Raises exception if args.algo unknown (not needed b/c we filter in the parser, but I added it for modularity)
     """
-    if args.algo == "sac":
-        return SAC(
-            policy=MlpPolicy,
-            env=env,
-            batch_size=args.batch_size,
-            learning_starts=30,
-            verbose=0,
-            tensorboard_log=args.rl_log_path,
-            learning_rate=args.learning_rate
-        )
 
-    elif args.algo == "ppo":
-        from stable_baselines import PPO2
+    if args.library=="sb":
+        if args.algo == "sac":
+            return SAC(
+                policy=MlpPolicy,
+                env=env,
+                batch_size=args.batch_size,
+                learning_starts=30,
+                verbose=0,
+                tensorboard_log=args.rl_log_path,
+                learning_rate=args.learning_rate
+            )
 
-        if args.policy_type == "mlp":
-            from stable_baselines.common.policies import MlpPolicy as policy
+        elif args.algo == "ppo":
+            from stable_baselines import PPO2
 
-        elif args.policy_type == "lstm":
-            from stable_baselines.common.policies import MlpLstmPolicy as policy
+            if args.policy_type == "mlp":
+                from stable_baselines.common.policies import MlpPolicy as policy
 
-        return PPO2(policy, env, verbose=0, tensorboard_log=args.rl_log_path)
+            elif args.policy_type == "lstm":
+                from stable_baselines.common.policies import MlpLstmPolicy as policy
 
-    elif args.algo == "ppo_rllib":
-        trainer = ppo.PPOTrainer
-        return trainer
+            return PPO2(policy, env, verbose=0, tensorboard_log=args.rl_log_path)
+
+    elif args.library=="rllib":
+        if args.algo == "ppo":
+            trainer = ppo.PPOTrainer
+            return trainer
 
     else:
         raise NotImplementedError("Algorithm {} not supported. :( ".format(args.algo))
