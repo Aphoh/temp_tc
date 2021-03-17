@@ -83,9 +83,9 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb"):
         updated_agent = ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
         
         for i in range(num_steps):
-            pdb.set_trace()
+            # pdb.set_trace()
             result = updated_agent.train()
-            wandb.log(result)
+            wandb.log({"Episode_reward_mean":result["episode_reward_mean"]})
 
 def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
     """
