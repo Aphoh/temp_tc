@@ -9,7 +9,7 @@ from stable_baselines.common.evaluation import evaluate_policy
 from stable_baselines.common.env_checker import check_env
 
 import gym_socialgame.envs.utils as env_utils
-from gym_socialgame.envs.socialgame_env import SocialGameEnv, SocialGameEnvRLLib
+from gym_socialgame.envs.socialgame_env import SocialGameEnv, SocialGameEnvRLLib, SocialGameMetaEnv
 
 import tensorflow as tf
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
@@ -30,6 +30,7 @@ import datetime as dt
 import wandb
 import ray
 import ray.rllib.agents.ppo as ppo
+import ray.rllib.agents.maml as maml
 
 from ray.tune.integration.wandb import wandb_mixin
 
@@ -57,17 +58,17 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb"):
         from ray.tune.logger import pretty_print
 
         ray.init()
-        config = ppo.DEFAULT_CONFIG.copy()
-        config["num_gpus"] = 0
-        config["num_workers"] = 1
-        config["env"] = SocialGameEnvRLLib
-        config["env_config"] = vars(args)
-        # config["wandb"] = {"project":"energy-demand-response-game",
-        #                 "api_key":"7385069f57b00860da0e7add0bdc6eba19fb07cd",   #"~/rl_algos/api_key.txt",
+
+        # config["logger_config"] = {
+        #     "wandb":{
+        #         "project":"energy-demand-response-game",
+        #         "entity":"social-game-rl",
+        #         "api_key":"7385069f57b00860da0e7add0bdc6eba19fb07cd",   #"~/rl_algos/api_key.txt",
+        #     }
         # }
         
         # tune.run(
-        #     agent,
+        #     ppo.PPOTrainer,
         #     stop = {"training_iteration": num_steps},
         #     config = config,
         #     # callbacks = [WandbLoggerCallback(
@@ -77,11 +78,25 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb"):
         #     #     log_config=True
         #     # )
         #     # ]
-        #     loggers = DEFAULT_LOGGERS #[WandbLogger],
+        #     loggers = DEFAULT_LOGGERS + (WandbLogger, ),
         # )
 
-        updated_agent = ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
+        if args.algo=="ppo":
+            config = ppo.DEFAULT_CONFIG.copy()
+            config["num_gpus"] = 0
+            config["num_workers"] = 1
+            config["env"] = SocialGameEnvRLLib
+            config["env_config"] = vars(args)
+            updated_agent = ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
         
+        elif args.algo=="maml":
+            config = maml.DEFAULT_CONFIG.copy()
+            config["num_gpus"] = 0
+            config["num_workers"] = 1
+            config["env"] = SocialGameEnvRLLib
+            config["env_config"] = vars(args)
+            updated_agent = maml.MAMLTrainer(config=config, env = SocialGameMetaEnv)
+
         for i in range(num_steps):
             # pdb.set_trace()
             result = updated_agent.train()
@@ -140,8 +155,13 @@ def get_agent(env, args, non_vec_env=None):
             return PPO2(policy, env, verbose=0, tensorboard_log=args.rl_log_path)
 
     elif args.library=="rllib":
+
         if args.algo == "ppo":
             trainer = ppo.PPOTrainer
+            return trainer
+
+        elif args.algo == "maml":
+            trainer = maml.MAMLTrainer
             return trainer
 
     else:
@@ -283,7 +303,7 @@ def parse_args():
         "--algo", 
         help="Stable Baselines Algorithm", 
         type=str, 
-        choices=["sac", "ppo", "ppo_rllib"]
+        choices=["sac", "ppo", "maml"]
     )
     parser.add_argument(
         "--base_log_dir",
