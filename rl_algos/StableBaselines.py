@@ -31,8 +31,9 @@ import wandb
 import ray
 import ray.rllib.agents.ppo as ppo
 import ray.rllib.agents.maml as maml
-
+from ray import tune
 from ray.tune.integration.wandb import wandb_mixin
+from ray.tune.integration.wandb import WandbLoggerCallback
 
 import pdb
 
@@ -88,19 +89,45 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb"):
             config["env"] = SocialGameEnvRLLib
             config["env_config"] = vars(args)
             updated_agent = ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
+            to_log = ["episode_reward_mean"]
         
         elif args.algo=="maml":
             config = maml.DEFAULT_CONFIG.copy()
-            config["num_gpus"] = 0
-            config["num_workers"] = 1
-            config["env"] = SocialGameEnvRLLib
+            config["num_gpus"] = 1
+            config["num_workers"] = 4
+            config["env"] = SocialGameMetaEnv
             config["env_config"] = vars(args)
+            config["normalize_actions"] = True
+            config["log_save_interval"] = 10
             updated_agent = maml.MAMLTrainer(config=config, env = SocialGameMetaEnv)
+            to_log = ["episode_reward_mean", "episode_reward_mean_adapt_1", "adaptation_delta"]
+            # tune.run(
+            #     maml.MAMLTrainer,
+            #     #env=SocialGameMetaEnv,
+            #     stop = {"training_iteration": num_steps},
+            #     config = config,
+            #     callbacks = [WandbLoggerCallback(
+            #         api_key = "b07c08968f3f86046147fe170d32fdd8f9b0c435",
+            #         # entity="social-game-rl",
+            #         project= "energy-demand-response-game",
+            #         log_config=True,
+            #         config = {
+            #                  "entity":"social-game-rl",
+            #                  "sync_tensorboard":True}
+            #     )
+            #     ],
+                
+            #     #loggers = DEFAULT_LOGGERS + (WandbLogger, ),
+            # )
 
         for i in range(num_steps):
             # pdb.set_trace()
             result = updated_agent.train()
-            wandb.log({"Episode_reward_mean":result["episode_reward_mean"]})
+            #pdb.set_trace()
+            log = {name: result[name] for name in to_log}
+            wandb.log(log)
+            if args.algo=="maml":
+                wandb.log({"total_loss": result["info"]["learner"]["default_policy"]["total_loss"]})
 
 def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
     """
@@ -121,11 +148,9 @@ def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=Fals
     print("Mean Reward: {:.3f}".format(mean_reward))
     print("Std Reward: {:.3f}".format(std_reward))
 
-
 def get_agent(env, args, non_vec_env=None):
     """
     Purpose: Import algo, policy and create agent
-
     Returns: Agent
 
     Exceptions: Raises exception if args.algo unknown (not needed b/c we filter in the parser, but I added it for modularity)
@@ -504,8 +529,8 @@ def main():
     # Print evaluation of policy
     print("Beginning Evaluation")
 
-    eval_env = get_environment(args)
-    eval_policy(model, eval_env, num_eval_episodes=10)
+    #eval_env = get_environment(args)
+    #eval_policy(model, eval_env, num_eval_episodes=10)
 
     print(
         "If there was no planning model involved, remember that the output will be in the log dir"
