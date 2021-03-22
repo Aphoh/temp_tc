@@ -353,7 +353,7 @@ class SocialGameEnv(gym.Env):
                     reward = player_reward.log_cost()
 
                 smirl_weight = 0.3
-                reward += smirl_weight * self.buffer.logprob(self._get_observation())
+                reward -= smirl_weight * self.buffer.logprob(self._get_observation())
 
                 total_reward += reward
 
