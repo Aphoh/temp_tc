@@ -24,8 +24,7 @@ class SocialGameEnv(gym.Env):
         pricing_type="TOU",
         reward_function = "log_cost_regularized",
         bin_observation_space=False,
-        manual_tou_magnitude=.3,
-        ):
+        manual_tou_magnitude=.3):
 
         """
         SocialGameEnv for an agent determining incentives in a social game.
@@ -75,6 +74,7 @@ class SocialGameEnv(gym.Env):
         self.days_of_week = [0, 1, 2, 3, 4]
         self.day_of_week_flag = day_of_week
         self.day_of_week = self.days_of_week[self.day % 5]
+        self.hours_in_day = 10
 
         #Create Observation Space (aka State Space)
         self.observation_space = self._create_observation_space()
@@ -399,7 +399,6 @@ class SocialGameEnv(gym.Env):
             next_observation = np.concatenate((next_observation, self.prev_energy))
 
         return next_observation
-
 
     def reset(self):
         """ Resets the environment on the current day """

@@ -67,7 +67,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb"):
         #         "api_key":"7385069f57b00860da0e7add0bdc6eba19fb07cd",   #"~/rl_algos/api_key.txt",
         #     }
         # }
-        
+
         # tune.run(
         #     ppo.PPOTrainer,
         #     stop = {"training_iteration": num_steps},
@@ -90,7 +90,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb"):
             config["env_config"] = vars(args)
             updated_agent = ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
             to_log = ["episode_reward_mean"]
-        
+
         elif args.algo=="maml":
             config = maml.DEFAULT_CONFIG.copy()
             config["num_gpus"] = 1
@@ -116,7 +116,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb"):
             #                  "sync_tensorboard":True}
             #     )
             #     ],
-                
+
             #     #loggers = DEFAULT_LOGGERS + (WandbLogger, ),
             # )
 
@@ -217,7 +217,7 @@ def get_environment(args):
     """
     # Convert string args (which are supposed to be bool) into actual boolean values
     args_convert_bool(args)
-    
+
     # SAC only works in continuous environment
     if args.algo == "sac":
         if args.action_space == "fourier":
@@ -286,7 +286,7 @@ def vectorize_environment(env, args, include_non_vec_env=False):
             return env
         else:
             return env, socialgame_env
-    
+
     elif args.library=="sb3":
         raise NotImplementedError
 
@@ -295,9 +295,9 @@ def vectorize_environment(env, args, include_non_vec_env=False):
 
         if include_non_vec_env==False:
             return env
-        else: 
+        else:
             return env, env
-        
+
     else:
         print("Wrong library!")
         raise AssertionError
@@ -325,9 +325,9 @@ def parse_args():
         default="v0",
     )
     parser.add_argument(
-        "--algo", 
-        help="Stable Baselines Algorithm", 
-        type=str, 
+        "--algo",
+        help="Stable Baselines Algorithm",
+        type=str,
         choices=["sac", "ppo", "maml"]
     )
     parser.add_argument(
@@ -396,13 +396,6 @@ def parse_args():
         choices=[i for i in range(1, 21)],
     )
     parser.add_argument(
-        "--price_in_state",
-        help = "Is price in the state",
-        type = str,
-        default = "T",
-        choices = ["T", "F"]
-    )
-    parser.add_argument(
         "--energy_in_state",
         help="Whether to include energy in state (default = F)",
         type=str,
@@ -410,8 +403,15 @@ def parse_args():
         choices=["T", "F"],
     )
     parser.add_argument(
-        "--exp_name", 
-        help="experiment_name", 
+        "--price_in_state",
+        help="Whether to include price in state (default = F)",
+        type=str,
+        default="F",
+        choices=["T", "F"],
+    )
+    parser.add_argument(
+        "--exp_name",
+        help="experiment_name",
         type=str,
         default=str(dt.datetime.today())
     )
@@ -487,6 +487,7 @@ def main():
     # Print args for reference
     print(args)
     args_convert_bool(args)
+    wandb.config.update(args)
 
     if args.wandb:
         wandb.init(project="energy-demand-response-game", entity="social-game-rl", sync_tensorboard=True)
@@ -499,12 +500,12 @@ def main():
         raise ValueError
 
     env = get_environment(
-        args, 
+        args,
     )
 
-    # if you need to modify to bring in non vectorized env, you need to modify function returns 
+    # if you need to modify to bring in non vectorized env, you need to modify function returns
     vec_env = vectorize_environment(
-        env, 
+        env,
         args,
         )
 
