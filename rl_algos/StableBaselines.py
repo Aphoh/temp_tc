@@ -43,41 +43,29 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
         ray.init()
 
-        # config["logger_config"] = {
-        #     "wandb":{
-        #         "project":"energy-demand-response-game",
-        #         "entity":"social-game-rl",
-        #         "api_key":"7385069f57b00860da0e7add0bdc6eba19fb07cd",   #"~/rl_algos/api_key.txt",
-        #     }
-        # }
-
-        # tune.run(
-        #     ppo.PPOTrainer,
-        #     stop = {"training_iteration": num_steps},
-        #     config = config,
-        #     # callbacks = [WandbLoggerCallback(
-        #     #     api_key = "7385069f57b00860da0e7add0bdc6eba19fb07cd",
-        #     #     # entity="social-game-rl",
-        #     #     project= "energy-demand-response-game",
-        #     #     log_config=True
-        #     # )
-        #     # ]
-        #     loggers = DEFAULT_LOGGERS + (WandbLogger, ),
-        # )
-
         if args.algo=="ppo":
+            train_batch_size = 4000
             config = ray_ppo.DEFAULT_CONFIG.copy()
             config["framework"] = "torch"
+            config["train_batch_size"] = train_batch_size
             config["num_gpus"] = 0
             config["num_workers"] = 1
             config["env"] = SocialGameEnvRLLib
             config["env_config"] = vars(args)
             updated_agent = ray_ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
             to_log = ["episode_reward_mean"]
+            for i in range(int(np.ceil(num_steps/train_batch_size))):
+                result = updated_agent.train()
+                log = {name: result[name] for name in to_log}
+                if args.wandb:
+                    wandb.log(log)
+                else:
+                    print(log)
 
         elif args.algo=="maml":
             config = ray_maml.DEFAULT_CONFIG.copy()
             config["num_gpus"] = 1
+            config["train_batch_size"] = train_batch_size
             config["num_workers"] = 4
             config["env"] = SocialGameMetaEnv
             config["env_config"] = vars(args)
@@ -85,36 +73,15 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["log_save_interval"] = 10
             updated_agent = ray_maml.MAMLTrainer(config=config, env = SocialGameMetaEnv)
             to_log = ["episode_reward_mean", "episode_reward_mean_adapt_1", "adaptation_delta"]
-            # tune.run(
-            #     maml.MAMLTrainer,
-            #     #env=SocialGameMetaEnv,
-            #     stop = {"training_iteration": num_steps},
-            #     config = config,
-            #     callbacks = [WandbLoggerCallback(
-            #         api_key = "b07c08968f3f86046147fe170d32fdd8f9b0c435",
-            #         # entity="social-game-rl",
-            #         project= "energy-demand-response-game",
-            #         log_config=True,
-            #         config = {
-            #                  "entity":"social-game-rl",
-            #                  "sync_tensorboard":True}
-            #     )
-            #     ],
 
-            #     #loggers = DEFAULT_LOGGERS + (WandbLogger, ),
-            # )
-
-        for i in range(num_steps):
-            # pdb.set_trace()
-            result = updated_agent.train()
-            #pdb.set_trace()
-            log = {name: result[name] for name in to_log}
-            if args.wandb:
-                wandb.log(log)
-                if args.algo=="maml":
+            for i in range(num_steps):
+                result = updated_agent.train()
+                log = {name: result[name] for name in to_log}
+                if args.wandb:
+                    wandb.log(log)
                     wandb.log({"total_loss": result["info"]["learner"]["default_policy"]["total_loss"]})
-            else:
-                print(log)
+                else:
+                    print(log)
 
 def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
     """
