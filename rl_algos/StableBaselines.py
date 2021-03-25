@@ -15,6 +15,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.env_checker import check_env
 
 import gym_socialgame.envs.utils as env_utils
+from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv)
 
 import ray
 import ray.rllib.agents.ppo as ray_ppo
@@ -66,6 +67,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
         if args.algo=="ppo":
             config = ray_ppo.DEFAULT_CONFIG.copy()
+            config["framework"] = "torch"
             config["num_gpus"] = 0
             config["num_workers"] = 1
             config["env"] = SocialGameEnvRLLib
@@ -107,9 +109,12 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             result = updated_agent.train()
             #pdb.set_trace()
             log = {name: result[name] for name in to_log}
-            wandb.log(log)
-            if args.algo=="maml":
-                wandb.log({"total_loss": result["info"]["learner"]["default_policy"]["total_loss"]})
+            if args.wandb:
+                wandb.log(log)
+                if args.algo=="maml":
+                    wandb.log({"total_loss": result["info"]["learner"]["default_policy"]["total_loss"]})
+            else:
+                print(log)
 
 def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
     """
@@ -253,7 +258,7 @@ def vectorize_environment(env, args, include_non_vec_env=False):
     if args.library=="sb3":
 
         # Using env_fn so we can create vectorized environment for stable baselines.
-        env_fn = lambda: Monitor(socialgame_env)
+        env_fn = lambda: Monitor(env)
         venv = DummyVecEnv([env_fn])
         env = VecNormalize(venv)
 
@@ -301,6 +306,7 @@ def parse_args():
         "--algo",
         help="RL Algorithm",
         type=str,
+        default="sac",
         choices=["sac", "ppo", "maml"]
     )
     parser.add_argument(
@@ -379,7 +385,7 @@ def parse_args():
         "--price_in_state",
         help="Whether to include price in state (default = F)",
         type=str,
-        default="F",
+        default="T",
         choices=["T", "F"],
     )
     parser.add_argument(
@@ -458,7 +464,6 @@ def main():
     args = parse_args()
 
     # Print args for reference
-    print(args)
     args_convert_bool(args)
 
     if args.wandb:

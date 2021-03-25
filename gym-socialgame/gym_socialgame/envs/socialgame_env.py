@@ -458,7 +458,19 @@ class SocialGameEnv(gym.Env):
 
 class SocialGameEnvRLLib(SocialGameEnv):
     def __init__(self, env_config):
-        super().__init__(**env_config)
+        super().__init__(
+            action_space_string = env_config["action_space_string"],
+            response_type_string = env_config["response_type_string"],
+            number_of_participants = env_config["number_of_participants"],
+            one_day = env_config["one_day"],
+            price_in_state= env_config["price_in_state"],
+            energy_in_state = env_config["energy_in_state"],
+            # day_of_week = env_config["day_of_week"],
+            pricing_type=env_config["pricing_type"],
+            reward_function = env_config["reward_function"],
+            bin_observation_space=env_config["bin_observation_space"],
+            manual_tou_magnitude=env_config["manual_tou_magnitude"],
+        )
         print("Initialized RLLib child class")
 
 class SocialGameMetaEnv(SocialGameEnvRLLib):
