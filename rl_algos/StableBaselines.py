@@ -1,49 +1,37 @@
 import argparse
 import numpy as np
 import gym
-from stable_baselines import SAC
-from stable_baselines.sac.policies import MlpPolicy
-from stable_baselines.common.vec_env import (DummyVecEnv, VecCheckNan, VecNormalize)
-
-from stable_baselines.common.evaluation import evaluate_policy
-from stable_baselines.common.env_checker import check_env
-
-import gym_socialgame.envs.utils as env_utils
-from gym_socialgame.envs.socialgame_env import SocialGameEnv, SocialGameEnvRLLib, SocialGameMetaEnv
-
-import tensorflow as tf
-tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-
-from tensorboard_logger import (  # pylint: disable=import-error, no-name-in-module
-    configure as tb_configure,
-)
-from tensorboard_logger import (  # pylint: disable=import-error, no-name-in-module
-    log_value as tb_log_value,
-)
-
 import utils
 import wandb
-
 import os
-
 import datetime as dt
-import wandb
+
+from stable_baselines3 import SAC, PPO
+from stable_baselines3.sac.policies import MlpPolicy as SACMlpPolicy
+from stable_baselines3.ppo.policies import MlpPolicy as PPOMlpPolicy
+from stable_baselines3.common.vec_env import (DummyVecEnv, VecCheckNan, VecNormalize)
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.env_checker import check_env
+
+import gym_socialgame.envs.utils as env_utils
+
 import ray
-import ray.rllib.agents.ppo as ppo
-import ray.rllib.agents.maml as maml
+import ray.rllib.agents.ppo as ray_ppo
+import ray.rllib.agents.maml as ray_maml
 from ray import tune
-from ray.tune.integration.wandb import wandb_mixin
-from ray.tune.integration.wandb import WandbLoggerCallback
+from ray.tune.integration.wandb import (wandb_mixin, WandbLoggerCallback)
+from ray.tune.logger import (DEFAULT_LOGGERS, pretty_print)
+from ray.tune.integration.wandb import WandbLogger
 
 import pdb
 
-# @wandb_mixin
-def train(agent, num_steps, tb_log_name, args = None, library="sb"):
+def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
     """
     Purpose: Train agent in env, and then call eval function to evaluate policy
     """
     # Train agent
-    if library=="sb":
+    if library=="sb3":
         agent.learn(
             total_timesteps=num_steps,
             log_interval=10,
@@ -51,12 +39,6 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb"):
         )
 
     elif library=="rllib":
-
-        import ray
-        from ray import tune
-        from ray.tune.logger import DEFAULT_LOGGERS
-        from ray.tune.integration.wandb import WandbLogger
-        from ray.tune.logger import pretty_print
 
         ray.init()
 
@@ -83,23 +65,23 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb"):
         # )
 
         if args.algo=="ppo":
-            config = ppo.DEFAULT_CONFIG.copy()
+            config = ray_ppo.DEFAULT_CONFIG.copy()
             config["num_gpus"] = 0
             config["num_workers"] = 1
             config["env"] = SocialGameEnvRLLib
             config["env_config"] = vars(args)
-            updated_agent = ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
+            updated_agent = ray_ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
             to_log = ["episode_reward_mean"]
 
         elif args.algo=="maml":
-            config = maml.DEFAULT_CONFIG.copy()
+            config = ray_maml.DEFAULT_CONFIG.copy()
             config["num_gpus"] = 1
             config["num_workers"] = 4
             config["env"] = SocialGameMetaEnv
             config["env_config"] = vars(args)
             config["normalize_actions"] = True
             config["log_save_interval"] = 10
-            updated_agent = maml.MAMLTrainer(config=config, env = SocialGameMetaEnv)
+            updated_agent = ray_maml.MAMLTrainer(config=config, env = SocialGameMetaEnv)
             to_log = ["episode_reward_mean", "episode_reward_mean_adapt_1", "adaptation_delta"]
             # tune.run(
             #     maml.MAMLTrainer,
@@ -156,37 +138,33 @@ def get_agent(env, args, non_vec_env=None):
     Exceptions: Raises exception if args.algo unknown (not needed b/c we filter in the parser, but I added it for modularity)
     """
 
-    if args.library=="sb":
+    if args.library=="sb3":
         if args.algo == "sac":
             return SAC(
-                policy=MlpPolicy,
+                policy=SACMlpPolicy,
                 env=env,
                 batch_size=args.batch_size,
                 learning_starts=30,
                 verbose=0,
-                tensorboard_log=args.rl_log_path,
-                learning_rate=args.learning_rate
-            )
+                tensorboard_log=args.log_path,
+                learning_rate=args.learning_rate)
 
         elif args.algo == "ppo":
-            from stable_baselines import PPO2
-
-            if args.policy_type == "mlp":
-                from stable_baselines.common.policies import MlpPolicy as policy
-
-            elif args.policy_type == "lstm":
-                from stable_baselines.common.policies import MlpLstmPolicy as policy
-
-            return PPO2(policy, env, verbose=0, tensorboard_log=args.rl_log_path)
+            return PPO(
+                    policy=PPOMlpPolicy,
+                    env=env,
+                    verbose=2,
+                    n_steps=128,
+                    tensorboard_log=args.log_path)
 
     elif args.library=="rllib":
 
         if args.algo == "ppo":
-            trainer = ppo.PPOTrainer
+            trainer = ray_ppo.PPOTrainer
             return trainer
 
         elif args.algo == "maml":
-            trainer = maml.MAMLTrainer
+            trainer = ray_maml.MAMLTrainer
             return trainer
 
     else:
@@ -220,9 +198,7 @@ def get_environment(args):
 
     # SAC only works in continuous environment
     if args.algo == "sac":
-        if args.action_space == "fourier":
-            action_space_string = "fourier"
-        elif args.action_space == "c_norm":
+        if args.action_space == "c_norm":
             action_space_string = "continuous_normalized"
         else:
             action_space_string = "continuous"
@@ -274,10 +250,10 @@ def vectorize_environment(env, args, include_non_vec_env=False):
 
     # temp_step_fnc = socialgame_env.step
 
-    if args.library=="sb":
+    if args.library=="sb3":
 
         # Using env_fn so we can create vectorized environment for stable baselines.
-        env_fn = lambda: env
+        env_fn = lambda: Monitor(socialgame_env)
         venv = DummyVecEnv([env_fn])
         env = VecNormalize(venv)
 
@@ -286,9 +262,6 @@ def vectorize_environment(env, args, include_non_vec_env=False):
             return env
         else:
             return env, socialgame_env
-
-    elif args.library=="sb3":
-        raise NotImplementedError
 
     elif args.library=="rllib":
         #RL lib auto-vectorizes them, sweet
@@ -326,7 +299,7 @@ def parse_args():
     )
     parser.add_argument(
         "--algo",
-        help="Stable Baselines Algorithm",
+        help="RL Algorithm",
         type=str,
         choices=["sac", "ppo", "maml"]
     )
@@ -467,8 +440,8 @@ def parse_args():
         "--library",
         help = "What RL Library backend is in use",
         type = str,
-        default = "sb",
-        choices = ["sb", "sb3", "rllib"]
+        default = "sb3",
+        choices = ["sb3", "rllib"]
     )
 
     args = parser.parse_args()
@@ -487,7 +460,6 @@ def main():
     # Print args for reference
     print(args)
     args_convert_bool(args)
-    wandb.config.update(args)
 
     if args.wandb:
         wandb.init(project="energy-demand-response-game", entity="social-game-rl", sync_tensorboard=True)
@@ -529,9 +501,6 @@ def main():
 
     # Print evaluation of policy
     print("Beginning Evaluation")
-
-    #eval_env = get_environment(args)
-    #eval_policy(model, eval_env, num_eval_episodes=10)
 
     print(
         "If there was no planning model involved, remember that the output will be in the log dir"

@@ -4,8 +4,6 @@ from gym import spaces
 import numpy as np
 import random
 
-import tensorflow as tf
-
 from gym_socialgame.envs.utils import price_signal
 from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
@@ -74,7 +72,6 @@ class SocialGameEnv(gym.Env):
         self.days_of_week = [0, 1, 2, 3, 4]
         self.day_of_week_flag = day_of_week
         self.day_of_week = self.days_of_week[self.day % 5]
-        self.hours_in_day = 10
 
         #Create Observation Space (aka State Space)
         self.observation_space = self._create_observation_space()
