@@ -10,4 +10,4 @@ then
   GPU_FLAGS="--gpus=all"
 fi
 
-docker run -it $GPU_FLAGS --rm --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 -v "$(pwd):$WORKDIR" tc-temp
+docker run -it $GPU_FLAGS --rm --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 --net=host -v "$(pwd):$WORKDIR" tc-temp

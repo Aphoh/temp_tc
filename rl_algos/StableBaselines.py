@@ -1,43 +1,87 @@
 import argparse
 import numpy as np
 import gym
-from stable_baselines import SAC
-from stable_baselines.sac.policies import MlpPolicy
-from stable_baselines.common.vec_env import (DummyVecEnv, VecCheckNan, VecNormalize)
-
-from stable_baselines.common.evaluation import evaluate_policy
-from stable_baselines.common.env_checker import check_env
-
-import gym_socialgame.envs.utils as env_utils
-
-import tensorflow as tf
-tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-
-from tensorboard_logger import (  # pylint: disable=import-error, no-name-in-module
-    configure as tb_configure,
-)
-from tensorboard_logger import (  # pylint: disable=import-error, no-name-in-module
-    log_value as tb_log_value,
-)
-
 import utils
 import wandb
-
 import os
+import datetime as dt
 
+from stable_baselines3 import SAC, PPO
+from stable_baselines3.sac.policies import MlpPolicy as SACMlpPolicy
+from stable_baselines3.ppo.policies import MlpPolicy as PPOMlpPolicy
+from stable_baselines3.common.vec_env import (DummyVecEnv, VecCheckNan, VecNormalize)
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.env_checker import check_env
 
-def train(agent, num_steps, tb_log_name):
+import gym_socialgame.envs.utils as env_utils
+from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv)
+
+import ray
+import ray.rllib.agents.ppo as ray_ppo
+import ray.rllib.agents.maml as ray_maml
+from ray import tune
+from ray.tune.integration.wandb import (wandb_mixin, WandbLoggerCallback)
+from ray.tune.logger import (DEFAULT_LOGGERS, pretty_print)
+from ray.tune.integration.wandb import WandbLogger
+
+import pdb
+
+def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
     """
     Purpose: Train agent in env, and then call eval function to evaluate policy
     """
     # Train agent
+    if library=="sb3":
+        agent.learn(
+            total_timesteps=num_steps,
+            log_interval=10,
+            tb_log_name=tb_log_name
+        )
 
-    agent.learn(
-        total_timesteps=num_steps,
-        log_interval=10,
-        tb_log_name=tb_log_name
-    )
+    elif library=="rllib":
 
+        ray.init()
+
+        if args.algo=="ppo":
+            train_batch_size = 4000
+            config = ray_ppo.DEFAULT_CONFIG.copy()
+            config["framework"] = "torch"
+            config["train_batch_size"] = train_batch_size
+            config["num_gpus"] = 0
+            config["num_workers"] = 1
+            config["env"] = SocialGameEnvRLLib
+            config["env_config"] = vars(args)
+            updated_agent = ray_ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
+            to_log = ["episode_reward_mean"]
+            for i in range(int(np.ceil(num_steps/train_batch_size))):
+                result = updated_agent.train()
+                log = {name: result[name] for name in to_log}
+                if args.wandb:
+                    wandb.log(log)
+                else:
+                    print(log)
+
+        elif args.algo=="maml":
+            config = ray_maml.DEFAULT_CONFIG.copy()
+            config["num_gpus"] = 1
+            config["train_batch_size"] = train_batch_size
+            config["num_workers"] = 4
+            config["env"] = SocialGameMetaEnv
+            config["env_config"] = vars(args)
+            config["normalize_actions"] = True
+            config["log_save_interval"] = 10
+            updated_agent = ray_maml.MAMLTrainer(config=config, env = SocialGameMetaEnv)
+            to_log = ["episode_reward_mean", "episode_reward_mean_adapt_1", "adaptation_delta"]
+
+            for i in range(num_steps):
+                result = updated_agent.train()
+                log = {name: result[name] for name in to_log}
+                if args.wandb:
+                    wandb.log(log)
+                    wandb.log({"total_loss": result["info"]["learner"]["default_policy"]["total_loss"]})
+                else:
+                    print(log)
 
 def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
     """
@@ -58,36 +102,42 @@ def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=Fals
     print("Mean Reward: {:.3f}".format(mean_reward))
     print("Std Reward: {:.3f}".format(std_reward))
 
-
 def get_agent(env, args, non_vec_env=None):
     """
     Purpose: Import algo, policy and create agent
-
     Returns: Agent
 
     Exceptions: Raises exception if args.algo unknown (not needed b/c we filter in the parser, but I added it for modularity)
     """
-    if args.algo == "sac":
-        return SAC(
-            policy=MlpPolicy,
-            env=env,
-            batch_size=args.batch_size,
-            learning_starts=30,
-            verbose=0,
-            tensorboard_log=args.rl_log_path,
-            learning_rate=args.learning_rate
-        )
 
-    elif args.algo == "ppo":
-        from stable_baselines import PPO2
+    if args.library=="sb3":
+        if args.algo == "sac":
+            return SAC(
+                policy=SACMlpPolicy,
+                env=env,
+                batch_size=args.batch_size,
+                learning_starts=30,
+                verbose=0,
+                tensorboard_log=args.log_path,
+                learning_rate=args.learning_rate)
 
-        if args.policy_type == "mlp":
-            from stable_baselines.common.policies import MlpPolicy as policy
+        elif args.algo == "ppo":
+            return PPO(
+                    policy=PPOMlpPolicy,
+                    env=env,
+                    verbose=2,
+                    n_steps=128,
+                    tensorboard_log=args.log_path)
 
-        elif args.policy_type == "lstm":
-            from stable_baselines.common.policies import MlpLstmPolicy as policy
+    elif args.library=="rllib":
 
-        return PPO2(policy, env, verbose=0, tensorboard_log=args.rl_log_path)
+        if args.algo == "ppo":
+            trainer = ray_ppo.PPOTrainer
+            return trainer
+
+        elif args.algo == "maml":
+            trainer = ray_maml.MAMLTrainer
+            return trainer
 
     else:
         raise NotImplementedError("Algorithm {} not supported. :( ".format(args.algo))
@@ -103,9 +153,10 @@ def args_convert_bool(args):
         args.price_in_state = utils.string2bool(args.price_in_state)
     if not isinstance(args.test_planning_env, (bool)):
         args.test_planning_env = utils.string2bool(args.test_planning_env)
+    if not isinstance(args.bin_observation_space, (bool)):
+        args.bin_observation_space = utils.string2bool(args.bin_observation_space)
 
-
-def get_environment(args, include_non_vec_env=False):
+def get_environment(args):
     """
     Purpose: Create environment for algorithm given by args. algo
 
@@ -115,15 +166,11 @@ def get_environment(args, include_non_vec_env=False):
     Returns: Environment with action space compatible with algo
     """
     # Convert string args (which are supposed to be bool) into actual boolean values
-
-    print(args.planning_steps, args.test_planning_env)
-    planning = (args.planning_steps > 0) or args.test_planning_env
+    args_convert_bool(args)
 
     # SAC only works in continuous environment
     if args.algo == "sac":
-        if args.action_space == "fourier":
-            action_space_string = "fourier"
-        elif args.action_space == "c_norm":
+        if args.action_space == "c_norm":
             action_space_string = "continuous_normalized"
         else:
             action_space_string = "continuous"
@@ -134,8 +181,6 @@ def get_environment(args, include_non_vec_env=False):
             lambda s: "continuous" if s == "c" else "multidiscrete"
         )
         action_space_string = convert_action_space_str(args.action_space)
-
-    planning_flag = args.planning_steps > 0
 
     if args.env_id == "hourly":
         env_id = "_hourly-v0"
@@ -153,53 +198,54 @@ def get_environment(args, include_non_vec_env=False):
     else:
         reward_function = args.reward_function
 
-    if not planning:
-        socialgame_env = gym.make(
-            "gym_socialgame:socialgame{}".format(env_id),
-            action_space_string=action_space_string,
-            response_type_string=args.response,
-            one_day=args.one_day,
-            number_of_participants=args.num_players,
-            energy_in_state=args.energy_in_state,
-            price_in_state=args.price_in_state,
-            pricing_type=args.pricing_type,
-            reward_function=reward_function,
-            fourier_basis_size=args.fourier_basis_size,
-            manual_tou_magnitude=args.manual_tou_magnitude
+    socialgame_env = gym.make(
+        "gym_socialgame:socialgame{}".format(env_id),
+        action_space_string=action_space_string,
+        response_type_string=args.response_type_string,
+        one_day=args.one_day,
+        number_of_participants=args.number_of_participants,
+        price_in_state = args.price_in_state,
+        energy_in_state=args.energy_in_state,
+        pricing_type=args.pricing_type,
+        reward_function=reward_function,
+        bin_observation_space = args.bin_observation_space,
+        manual_tou_magnitude=args.manual_tou_magnitude
         )
-    else:
-        # go into the planning mode
-        socialgame_env = gym.make(
-            "gym_socialgame:socialgame{}".format("_planning-v0"),
-            action_space_string=action_space_string,
-            response_type_string=args.response,
-            one_day=args.one_day,
-            number_of_participants=args.num_players,
-            price_in_state=args.price_in_state,
-            energy_in_state=args.energy_in_state,
-            pricing_type=args.pricing_type,
-            planning_flag=planning_flag,
-            planning_steps=args.planning_steps,
-            planning_model_type=args.planning_model,
-            own_tb_log=args.rl_log_path,
-            reward_function=reward_function
-        )
+
 
     # Check to make sure any new changes to environment follow OpenAI Gym API
     check_env(socialgame_env)
 
+    return socialgame_env
+
+def vectorize_environment(env, args, include_non_vec_env=False):
+
     # temp_step_fnc = socialgame_env.step
 
-    # Using env_fn so we can create vectorized environment.
-    env_fn = lambda: socialgame_env
-    venv = DummyVecEnv([env_fn])
-    env = VecNormalize(venv)
+    if args.library=="sb3":
 
-    # env.step = temp_step_fnc
-    if not include_non_vec_env:
-        return env
+        # Using env_fn so we can create vectorized environment for stable baselines.
+        env_fn = lambda: Monitor(env)
+        venv = DummyVecEnv([env_fn])
+        env = VecNormalize(venv)
+
+        # env.step = temp_step_fnc
+        if not include_non_vec_env:
+            return env
+        else:
+            return env, socialgame_env
+
+    elif args.library=="rllib":
+        #RL lib auto-vectorizes them, sweet
+
+        if include_non_vec_env==False:
+            return env
+        else:
+            return env, env
+
     else:
-        return env, socialgame_env
+        print("Wrong library!")
+        raise AssertionError
 
 
 def parse_args():
@@ -224,10 +270,11 @@ def parse_args():
         default="v0",
     )
     parser.add_argument(
-        "algo", help="Stable Baselines Algorithm", type=str, choices=["sac", "ppo"]
-    )
-    parser.add_argument(
-        "exp_name", help="Name of the experiment. Used to name log files, etc.", type=str
+        "--algo",
+        help="RL Algorithm",
+        type=str,
+        default="sac",
+        choices=["sac", "ppo", "maml"]
     )
     parser.add_argument(
         "--base_log_dir",
@@ -247,7 +294,7 @@ def parse_args():
         "--num_steps",
         help="Number of timesteps to train algo",
         type=int,
-        default=1000000,
+        default=50000,
     )
     # Note: only some algos (e.g. PPO) can use LSTM Policy the feature below is for future testing
     parser.add_argument(
@@ -263,14 +310,12 @@ def parse_args():
         choices=["c", "c_norm", "d", "fourier"],
     )
     parser.add_argument(
-        "--fourier_basis_size",
-        help="Fourier basis size to use when using fourier action space",
-        type=int,
-        default=4,
-        choices=list(range(100))
-    )
+        "--action_space_string",
+        help="action space string expanded (use this instead of action_space for RLLib)",
+        default="continuous",
+        )
     parser.add_argument(
-        "--response",
+        "--response_type_string",
         help="Player response function (l = linear, t = threshold_exponential, s = sinusoidal",
         type=str,
         default="l",
@@ -287,10 +332,10 @@ def parse_args():
         "--manual_tou_magnitude",
         help="Magnitude of the TOU during hours 5,6,7. Sets price in normal hours to 0.103.",
         type=float,
-        default=None
+        default=.4
     )
     parser.add_argument(
-        "--num_players",
+        "--number_of_participants",
         help="Number of players ([1, 20]) in social game",
         type=int,
         default=10,
@@ -307,8 +352,14 @@ def parse_args():
         "--price_in_state",
         help="Whether to include price in state (default = F)",
         type=str,
-        default="F",
+        default="T",
         choices=["T", "F"],
+    )
+    parser.add_argument(
+        "--exp_name",
+        help="experiment_name",
+        type=str,
+        default=str(dt.datetime.today())
     )
     parser.add_argument(
         "--planning_steps",
@@ -342,7 +393,7 @@ def parse_args():
         "--reward_function",
         help="reward function to test",
         type=str,
-        default="lcr",
+        default="log_cost_regularized",
         choices=["scaled_cost_distance", "log_cost_regularized", "log_cost", "scd", "lcr", "lc"],
     )
     parser.add_argument(
@@ -351,6 +402,21 @@ def parse_args():
         type=float,
         default=3e-4,
     )
+    parser.add_argument(
+        "--bin_observation_space",
+        help = "Bin the observations",
+        type = str,
+        default = "F",
+        choices = ["T", "F"]
+    )
+    parser.add_argument(
+        "--library",
+        help = "What RL Library backend is in use",
+        type = str,
+        default = "sb3",
+        choices = ["sb3", "rllib"]
+    )
+
     args = parser.parse_args()
 
     args.log_path = os.path.join(args.base_log_dir, args.exp_name + "/")
@@ -361,12 +427,10 @@ def parse_args():
 
 def main():
 
-
     # Get args
     args = parse_args()
 
     # Print args for reference
-    print(args)
     args_convert_bool(args)
 
     if args.wandb:
@@ -379,30 +443,36 @@ def main():
         print("Choose a new name for the experiment, log dir already exists")
         raise ValueError
 
-    env, socialgame_env = get_environment(
-        args, include_non_vec_env=True
+    env = get_environment(
+        args,
     )
-    print("Got environment, getting agent")
+
+    # if you need to modify to bring in non vectorized env, you need to modify function returns
+    vec_env = vectorize_environment(
+        env,
+        args,
+        )
+
+    print("Got vectorized environment, getting agent")
 
     # Create Agent
-    model = get_agent(env, args, non_vec_env=socialgame_env)
+    model = get_agent(vec_env, args, non_vec_env=None)
     print("Got agent")
 
     # Train algo, (logging through Tensorboard)
     print("Beginning Testing!")
     r_real = train(
-        model,
-        args.num_steps,
-        tb_log_name=args.exp_name
+        agent = model,
+        num_steps = args.num_steps,
+        tb_log_name=args.exp_name,
+        args = args,
+        library=args.library
     )
 
     print("Training Completed! View TensorBoard logs at " + args.log_path)
 
     # Print evaluation of policy
     print("Beginning Evaluation")
-
-    eval_env = get_environment(args)
-    eval_policy(model, eval_env, num_eval_episodes=10)
 
     print(
         "If there was no planning model involved, remember that the output will be in the log dir"
