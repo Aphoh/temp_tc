@@ -10,9 +10,6 @@ from gym_socialgame.envs.utils import price_signal
 from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
 
-import pickle
-import IPython
-
 class SocialGameEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
@@ -465,20 +462,7 @@ class SocialGameEnv(gym.Env):
 
 class SocialGameEnvRLLib(SocialGameEnv):
     def __init__(self, env_config):
-        super().__init__(
-            action_space_string = env_config["action_space_string"],
-            response_type_string = env_config["response_type_string"],
-            number_of_participants = env_config["number_of_participants"],
-            one_day = env_config["one_day"],
-            price_in_state= env_config["price_in_state"],
-            energy_in_state = env_config["energy_in_state"],
-            # day_of_week = env_config["day_of_week"],
-            pricing_type=env_config["pricing_type"],
-            reward_function = env_config["reward_function"],
-            bin_observation_space=env_config["bin_observation_space"],
-            manual_tou_magnitude=env_config["manual_tou_magnitude"],
-        )
-
+        super().__init__(**env_config)
         print("Initialized RLLib child class")
 
 class SocialGameMetaEnv(SocialGameEnvRLLib):
@@ -518,8 +502,6 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
         # shiftByHours = 3,
         # maxCurtailHours=5,
         # baseline_energy_df_variance =  # add random noise to the existing?
-
-        IPython.embed()
 
         person_type = np.random.choice([DeterministicFunctionPerson, CurtailAndShiftPerson], size = (n_tasks, ))
         points_multiplier = np.random.choice(range(20), size = (n_tasks, ))
