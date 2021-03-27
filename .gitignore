@@ -239,3 +239,5 @@ old/
 wandb/
 .netrc
 .python_history
+
+ray_results/
