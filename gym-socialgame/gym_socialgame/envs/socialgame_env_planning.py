@@ -8,8 +8,6 @@ from gym_socialgame.envs.utils import price_signal
 from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
 
-import tensorflow as tf
-
 import pickle
 
 
@@ -162,18 +160,6 @@ class SocialGamePlanningEnv(SocialGameEnv):
             raise ValueError("wrong planning model choice")
             return
 
-    def load_model_from_disk(self, file_name="GPyOpt_planning_model"):
-        json_file = open(file_name + ".json", "r")
-        loaded_model_json = json_file.read()
-        json_file.close()
-        loaded_model = tf.keras.models.model_from_json(loaded_model_json)
-        # load weights into new model
-        loaded_model.load_weights(file_name + ".h5")
-        print("Loaded model from disk")
-
-        loaded_model.compile(loss="mse", optimizer="adam")
-        return loaded_model
-
     def step(self, action, step_num=0):
         """
         Purpose: Takes a step in the real environment
@@ -262,9 +248,6 @@ class SocialGamePlanningEnv(SocialGameEnv):
             done = False
 
         loaded_model = None
-
-        if self.planning_model_type == "LSTM":
-            loaded_model = self.load_model_from_disk("GPyOpt_planning_model")
 
         energy_consumptions = self._planning_prediction(
             action=points,
