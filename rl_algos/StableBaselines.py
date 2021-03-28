@@ -419,7 +419,7 @@ def parse_args():
     )
     parser.add_argument(
         "--smirl",
-        help="Whether to run wandb",
+        help="Whether to run with SMiRL",
         action="store_true"
     )
 
