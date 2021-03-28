@@ -336,11 +336,11 @@ class SocialGameEnv(gym.Env):
                     print("Reward function not recognized")
                     raise AssertionError
 
-                smirl_weight = 0.03
                 if self.use_smirl:
-                    total_reward += (1 - smirl_weight) * reward + smirl_weight * self.buffer.logprob(self._get_observation())
-                else:
-                    total_reward += reward
+                    smirl_weight = 0.03
+                    total_reward += smirl_weight * self.buffer.logprob(self._get_observation())
+                
+                total_reward += reward
 
 
         return total_reward
