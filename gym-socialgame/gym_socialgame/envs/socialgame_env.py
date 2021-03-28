@@ -70,6 +70,8 @@ class SocialGameEnv(gym.Env):
         self.manual_tou_magnitude = manual_tou_magnitude
         self.use_smirl = use_smirl
         self.hours_in_day = 10
+        self.last_smirl_reward = None
+        self.last_energy_reward = None
 
         self.day = 0
         self.days_of_week = [0, 1, 2, 3, 4]
@@ -311,7 +313,7 @@ class SocialGameEnv(gym.Env):
             TODO: Does it actually return that?
         """
 
-        total_pts_reward = 0
+        total_energy_reward = 0
         total_smirl_reward = 0
         for player_name in energy_consumptions:
             if player_name != "avg":
@@ -337,13 +339,17 @@ class SocialGameEnv(gym.Env):
                     print("Reward function not recognized")
                     raise AssertionError
 
-                total_pts_reward += reward
+                total_energy_reward += reward
 
                 if self.use_smirl:
                     smirl_weight = 0.03
                     total_smirl_reward += smirl_weight * self.buffer.logprob(self._get_observation())
 
-        return total_pts_reward + total_smirl_reward
+        total_smirl_reward = np.clip(total_smirl_reward, -100, 100)
+        self.last_smirl_reward = total_smirl_reward
+        self.last_energy_reward = total_energy_reward
+
+        return total_energy_reward + total_smirl_reward
 
     def step(self, action):
         """
@@ -361,7 +367,6 @@ class SocialGameEnv(gym.Env):
         Exceptions:
             raises AssertionError if action is not in the action space
         """
-
         self.action = action
 
         if not self.action_space.contains(action):
@@ -482,11 +487,11 @@ class SocialGameEnvRLLib(SocialGameEnv):
             one_day = env_config["one_day"],
             price_in_state= env_config["price_in_state"],
             energy_in_state = env_config["energy_in_state"],
-            # day_of_week = env_config["day_of_week"],
             pricing_type=env_config["pricing_type"],
             reward_function = env_config["reward_function"],
             bin_observation_space=env_config["bin_observation_space"],
             manual_tou_magnitude=env_config["manual_tou_magnitude"],
+            use_smirl=env_config["smirl"]
         )
         print("Initialized RLLib child class")
 
