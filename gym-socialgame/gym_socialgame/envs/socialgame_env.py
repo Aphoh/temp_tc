@@ -311,7 +311,8 @@ class SocialGameEnv(gym.Env):
             TODO: Does it actually return that?
         """
 
-        total_reward = 0
+        total_pts_reward = 0
+        total_smirl_reward = 0
         for player_name in energy_consumptions:
             if player_name != "avg":
                 # get the points output from players
@@ -336,14 +337,13 @@ class SocialGameEnv(gym.Env):
                     print("Reward function not recognized")
                     raise AssertionError
 
+                total_pts_reward += reward
+
                 if self.use_smirl:
                     smirl_weight = 0.03
-                    total_reward += smirl_weight * self.buffer.logprob(self._get_observation())
+                    total_smirl_reward += smirl_weight * self.buffer.logprob(self._get_observation())
 
-                total_reward += reward
-
-
-        return total_reward
+        return total_pts_reward + total_smirl_reward
 
     def step(self, action):
         """

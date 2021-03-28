@@ -2,6 +2,7 @@ import argparse
 import numpy as np
 import gym
 import utils
+from custom_callbacks import CustomCallbacks
 import wandb
 import os
 import datetime as dt
@@ -48,9 +49,10 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config = ray_ppo.DEFAULT_CONFIG.copy()
             config["framework"] = "torch"
             config["train_batch_size"] = train_batch_size
-            config["num_gpus"] = 0
+            config["num_gpus"] = 1
             config["num_workers"] = 1
             config["env"] = SocialGameEnvRLLib
+            config["callbacks"] = CustomCallbacks
             config["env_config"] = vars(args)
             updated_agent = ray_ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
             to_log = ["episode_reward_mean"]
@@ -409,7 +411,7 @@ def parse_args():
         type = str,
         default = "F",
         choices = ["T", "F"]
-    )
+   )
     parser.add_argument(
         "--library",
         help = "What RL Library backend is in use",
@@ -419,7 +421,7 @@ def parse_args():
     )
     parser.add_argument(
         "--smirl",
-        help="Whether to run wandb",
+        help="Whether to use SMiRL",
         action="store_true"
     )
 
