@@ -24,7 +24,7 @@ class SocialGameEnv(gym.Env):
         reward_function = "log_cost_regularized",
         bin_observation_space=False,
         manual_tou_magnitude=.3,
-        use_smirl=False):
+        smirl_weight=None):
 
         """
         SocialGameEnv for an agent determining incentives in a social game.
@@ -68,7 +68,8 @@ class SocialGameEnv(gym.Env):
         self.reward_function = reward_function
         self.bin_observation_space = bin_observation_space
         self.manual_tou_magnitude = manual_tou_magnitude
-        self.use_smirl = use_smirl
+        self.smirl_weight = smirl_weight
+        self.use_smirl = smirl_weight > 0 if smirl_weight else False
         self.hours_in_day = 10
         self.last_smirl_reward = None
         self.last_energy_reward = None
@@ -342,8 +343,8 @@ class SocialGameEnv(gym.Env):
                 total_energy_reward += reward
 
                 if self.use_smirl:
-                    smirl_weight = 0.03
-                    total_smirl_reward += smirl_weight * self.buffer.logprob(self._get_observation())
+                    total_smirl_reward += self.smirl_weight * self.buffer.logprob(self._get_observation())
+
 
         total_smirl_reward = np.clip(total_smirl_reward, -100, 100)
         self.last_smirl_reward = total_smirl_reward
@@ -491,7 +492,7 @@ class SocialGameEnvRLLib(SocialGameEnv):
             reward_function = env_config["reward_function"],
             bin_observation_space=env_config["bin_observation_space"],
             manual_tou_magnitude=env_config["manual_tou_magnitude"],
-            use_smirl=env_config["smirl"]
+            smirl_weight=env_config["smirl_weight"]
         )
         print("Initialized RLLib child class")
 

@@ -212,7 +212,7 @@ def get_environment(args):
         reward_function=reward_function,
         bin_observation_space = args.bin_observation_space,
         manual_tou_magnitude=args.manual_tou_magnitude,
-        use_smirl=args.smirl
+        smirl_weight=args.smirl_weight
         )
 
 
@@ -420,9 +420,10 @@ def parse_args():
         choices = ["sb3", "rllib"]
     )
     parser.add_argument(
-        "--smirl",
-        help="Whether to use SMiRL",
-        action="store_true"
+        "--smirl_weight",
+        help="Whether to run with SMiRL. When using SMiRL you must specify a weight.",
+        type = float,
+        default=None,
     )
 
     args = parser.parse_args()
