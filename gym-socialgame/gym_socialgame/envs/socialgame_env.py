@@ -21,10 +21,10 @@ class SocialGameEnv(gym.Env):
         energy_in_state = False,
         day_of_week = False,
         pricing_type="TOU",
-        buffer='gaussian',
         reward_function = "log_cost_regularized",
         bin_observation_space=False,
-        manual_tou_magnitude=.3):
+        manual_tou_magnitude=.3,
+        use_smirl=False):
 
         """
         SocialGameEnv for an agent determining incentives in a social game.
@@ -100,9 +100,8 @@ class SocialGameEnv(gym.Env):
         #TODO: Check initialization of prev_energy
         self.prev_energy = np.zeros(10)
 
-        #TODO: The buffer was added here, ensure that it is useful 
-        if buffer == 'gaussian':
-            self.buffer = GaussianBuffer(self.points_length)
+        if self.use_smirl:
+            self.buffer = GaussianBuffer(self.action_length)
 
 
         print("\n Social Game Environment Initialized! Have Fun! \n")
@@ -336,7 +335,12 @@ class SocialGameEnv(gym.Env):
                     print("Reward function not recognized")
                     raise AssertionError
 
-                total_reward += reward
+                smirl_weight = 0.03
+                if self.use_smirl:
+                    total_reward += (1 - smirl_weight) * reward + smirl_weight * self.buffer.logprob(self._get_observation())
+                else:
+                    total_reward += reward
+
 
         return total_reward
 
@@ -384,8 +388,11 @@ class SocialGameEnv(gym.Env):
         self.prev_energy = energy_consumptions["avg"]
 
         observation = self._get_observation()
-        self.buffer.add(observation)
         reward = self._get_reward(prev_price, energy_consumptions, reward_function = self.reward_function)
+
+        if self.use_smirl:
+            self.buffer.add(observation)
+
         info = {}
         return observation, reward, done, info
 

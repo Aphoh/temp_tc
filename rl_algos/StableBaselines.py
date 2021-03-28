@@ -209,7 +209,8 @@ def get_environment(args):
         pricing_type=args.pricing_type,
         reward_function=reward_function,
         bin_observation_space = args.bin_observation_space,
-        manual_tou_magnitude=args.manual_tou_magnitude
+        manual_tou_magnitude=args.manual_tou_magnitude,
+        use_smirl=args.smirl
         )
 
 
@@ -415,6 +416,11 @@ def parse_args():
         type = str,
         default = "sb3",
         choices = ["sb3", "rllib"]
+    )
+    parser.add_argument(
+        "--smirl",
+        help="Whether to run wandb",
+        action="store_true"
     )
 
     args = parser.parse_args()
