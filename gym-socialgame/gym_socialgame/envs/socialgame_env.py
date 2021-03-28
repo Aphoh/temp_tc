@@ -308,7 +308,7 @@ class SocialGameEnv(gym.Env):
 
         Returns:
             Energy_consumption: Dictionary containing the energy usage by player and the average energy used in the office (key = "avg")
-            TODO: Does it actually return that? 
+            TODO: Does it actually return that?
         """
 
         total_reward = 0
@@ -338,7 +338,7 @@ class SocialGameEnv(gym.Env):
 
                 smirl_weight = 0.03
                 if self.use_smirl:
-                    total_reward += (1 - smirl_weight) * reward + smirl_weight * self.buffer.logprob(self._get_observation())
+                    total_reward += smirl_weight * self.buffer.logprob(self._get_observation())
                 else:
                     total_reward += reward
 

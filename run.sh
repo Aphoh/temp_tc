@@ -5,7 +5,7 @@ DOCKER_BUILDKIT=1 docker build . -t tc-temp --build-arg UID=$(id -u) --build-arg
 WORKDIR=/home/$UNAME
 
 GPU_FLAGS=""
-if command -v nvidia-smi
+if command -v nvidia-smi &> /dev/null
 then
   GPU_FLAGS="--gpus=all"
 fi

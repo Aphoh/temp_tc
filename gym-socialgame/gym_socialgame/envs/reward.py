@@ -6,11 +6,9 @@ from sklearn.preprocessing import MinMaxScaler
 #### file to calculate the rewards. Meant to be modular:
 #### class Rewards should have several different functions by Dec 2019
 
-from gym_socialgame.envs.buffers import GaussianBuffer
-
 
 class Reward():
-	def __init__(self, energy_use, prices, min_demand, max_demand, buffer=None):
+	def __init__(self, energy_use, prices, min_demand, max_demand):
 		"""
 		Args:
 			energy_use: list returned by Person class signifying energy use
@@ -25,11 +23,6 @@ class Reward():
 		self.min_demand = np.min(energy_use) # min_demand
 		self.max_demand = np.max(energy_use) # max_demand
 		self.baseline_max_demand = 159.32
-
-		if buffer == 'Gaussian':
-			self.buffer = GaussianBuffer()
-		else:
-			self.buffer = None
 
 		#assert round(self.max_demand) == round(max_demand), "The max demand that the player is using and the optimization is using is not the same"
 		#assert round(self.min_demand) == round(min_demand), "The min demand that the player is using and the optimization is using is not the same"
@@ -162,7 +155,6 @@ class Reward():
 		else:
 			print("WEIRD REWARD ALERT. IDEAL COST >= CURRENT COST. returning reward of 10")
 			return 10
-  
 
 	def scaled_cost_distance(self, ideal_demands):
 		"""
