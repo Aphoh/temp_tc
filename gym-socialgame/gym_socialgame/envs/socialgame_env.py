@@ -7,6 +7,7 @@ import random
 from gym_socialgame.envs.utils import price_signal
 from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
+from gym_socialgame.envs.buffers import GaussianBuffer
 
 class SocialGameEnv(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -22,7 +23,8 @@ class SocialGameEnv(gym.Env):
         pricing_type="TOU",
         reward_function = "log_cost_regularized",
         bin_observation_space=False,
-        manual_tou_magnitude=.3):
+        manual_tou_magnitude=.3,
+        use_smirl=False):
 
         """
         SocialGameEnv for an agent determining incentives in a social game.
@@ -66,6 +68,7 @@ class SocialGameEnv(gym.Env):
         self.reward_function = reward_function
         self.bin_observation_space = bin_observation_space
         self.manual_tou_magnitude = manual_tou_magnitude
+        self.use_smirl = use_smirl
         self.hours_in_day = 10
 
         self.day = 0
@@ -97,6 +100,10 @@ class SocialGameEnv(gym.Env):
 
         #TODO: Check initialization of prev_energy
         self.prev_energy = np.zeros(10)
+
+        if self.use_smirl:
+            self.buffer = GaussianBuffer(self.action_length)
+
 
         print("\n Social Game Environment Initialized! Have Fun! \n")
 
@@ -301,6 +308,7 @@ class SocialGameEnv(gym.Env):
 
         Returns:
             Energy_consumption: Dictionary containing the energy usage by player and the average energy used in the office (key = "avg")
+            TODO: Does it actually return that?
         """
 
         total_reward = 0
@@ -328,7 +336,12 @@ class SocialGameEnv(gym.Env):
                     print("Reward function not recognized")
                     raise AssertionError
 
+                if self.use_smirl:
+                    smirl_weight = 0.03
+                    total_reward += smirl_weight * self.buffer.logprob(self._get_observation())
+
                 total_reward += reward
+
 
         return total_reward
 
@@ -377,6 +390,10 @@ class SocialGameEnv(gym.Env):
 
         observation = self._get_observation()
         reward = self._get_reward(prev_price, energy_consumptions, reward_function = self.reward_function)
+
+        if self.use_smirl:
+            self.buffer.add(observation)
+
         info = {}
         return observation, reward, done, info
 
