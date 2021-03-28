@@ -342,11 +342,12 @@ class SocialGameEnv(gym.Env):
 
                 total_energy_reward += reward
 
-                if self.use_smirl:
-                    total_smirl_reward += self.smirl_weight * self.buffer.logprob(self._get_observation())
+        total_energy_reward = total_energy_reward / self.number_of_participants
 
+        if self.use_smirl:
+            smirl_rew = self.buffer.logprob(self._get_observation())
+            total_smirl_reward = self.smirl_weight * np.clip(smirl_rew, -300, 300)
 
-        total_smirl_reward = np.clip(total_smirl_reward, -100, 100)
         self.last_smirl_reward = total_smirl_reward
         self.last_energy_reward = total_energy_reward
 
