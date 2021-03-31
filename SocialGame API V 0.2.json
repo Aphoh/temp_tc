@@ -1,0 +1,207 @@
+1.	Submit Game Users [PUT] [/participants]
+	+ Request (application/json)
+	{
+	   "gameId":"102",
+	   "name":"Game Name",
+	   "active":"true",
+	   "startDate":"03/04/2020",
+	   "endDate":"15/04/2020",
+	   "numWinners":"3",
+	   "users":[
+		  {
+			 "username":"ramit"
+		  },
+		  {
+			 "username":"chris"
+		  },
+		  {
+			 "username":"lucas"
+		  }
+	   ]
+	}
+	+ Response 202 (application/json)
+    {
+        "accepted": "true",
+    } 
+ 
+2. Get Hourly Energy Pricing [GET] [/energy/pricing]
+	
+	+ Request (application/json) 
+	{ 
+		"gameId": "102" 
+	} 
+	+ Response 200 (application/json)
+ 
+	[
+	   {
+	      "username":"ramit",
+	      "pricing":[
+	         {
+	            "houroftheday":"11",
+	            "rate":"5"
+	         },
+	         {
+	            "houroftheday":"12",
+	            "rate":"2"
+	         }
+	      ]
+	   },
+	   {
+	      "username":"lucas",
+	      "pricing":[
+	         {
+	            "houroftheday":"11",
+	            "rate":"5"
+	         },
+	         {
+	            "houroftheday":"13",
+	            "rate":"2"
+	         }
+	      ]
+	   }
+	]
+ 
+3. Submit User Hourly Energy Consumption [POST]  [/energy/consumption]
+	+ Request (application/json)
+	{
+	   "gameId":"102",
+	   "date":"02/12/2020 10:00",
+	   "users":[
+	      {
+	         "username":"ramit",
+	         "basePoints":"1054",
+	         "energy":[
+	            {
+	               "datetime":"02/12/2020 10:00", "usage":"35", "unit":"kW"
+	            },
+	            {
+	               "datetime":"02/12/2020 11:00", "usage":"35", "unit":"kW"
+	            }
+	         ],
+	         "preference":{
+	            "airmovement":[
+	               {
+	                  "datetime":"02/12/2020 10:00", "value":"-1"
+	               },
+	               {
+	                  "datetime":"02/12/2020 10:30", "value":"-1"
+	               },
+	               {
+	                  "datetime":"02/12/2020 11:00", "value":"+2"
+	               },
+	               {
+	                  "datetime":"02/12/2020 11:05", "value":"-1"
+	               }
+	            ],
+	            "temperature":[
+	               {
+	                  "datetime":"02/12/2020 10:00", "value":"-1"
+	               },
+	               {
+	                  "datetime":"02/12/2020 10:30", "value":"-1"
+	               },
+	               {
+	                  "datetime":"02/12/2020 11:00", "value":"+2"
+	               },
+	               {
+	                  "datetime":"02/12/2020 11:05", "value":"-1"
+	               }
+	            ],
+	            "brightness":[
+	               {
+	                  "datetime":"02/12/2020 10:00", "value":"-1"
+	               },
+	               {
+	                  "datetime":"02/12/2020 10:30", "value":"-1"
+	               },
+	               {
+	                  "datetime":"02/12/2020 11:00", "value":"+2"
+	               },
+	               {
+	                  "datetime":"02/12/2020 11:05", "value":"-1"
+	               }
+	            ]
+	         }
+	      },
+	      {
+	         "username":"lucas",
+	         "basePoints":"1054",
+	         "energy":[
+	            {
+	               "datetime":"02/12/2020 10:00", "usage":"35", "unit":"kW"
+	            },
+	            {
+	               "datetime":"02/12/2020 11:00", "usage":"35", "unit":"kW"
+	            }
+	         ]
+	      }
+	   ]
+	}
+	+ Response 200 (application/json)
+    {
+	   "gameId":"102",
+	   "acknowledged":"true",
+	   "acknowledgementId":"10248181"
+    }
+ 
+4. Get Points Earned and Base Points [GET] [/energy/points]
+	+ Request (application/json) 
+	{
+	   "gameId":"102",
+	   "acknowledgementId":"10248181"
+	}
+	  
+	+ Response 102 (application/json) 
+	{
+	   "gameId":"102",
+	   "acknowledgementId":"10248181",
+	   "message":"processing"
+	}
+	+ Response 200 (application/json)
+	{
+	   "gameId":"102",
+	   "acknowledgementId":"10248181",
+	   "message":"completed",
+	   "users":[
+	      {
+	         "user":"ramit",
+	         "basepoints":"1054",
+	         "earnedpoints":"945"
+	      },
+	      {
+	         "user":"lucas",
+	         "basepoints":"1054",
+	         "earnedpoints":"945"
+	      }
+	   ]
+	}
+    
+5. Calculate Game winners [POST] [/game/winners]
+  	+ Request (application/json) 
+	{
+	   "gameId":"102",
+	   "users":[
+	      {
+	         "username":"ramit",
+	         "earnedpoints":"2015"
+	      },
+	      {
+	         "username":"lucas",
+	         "earnedpoints":"2000"
+	      }
+	   ]
+	}
+   + Response 200 (application/json)
+   {
+	   "users":[
+	      {
+	         "username":"ramit",
+	         "rank":"1"
+	      },
+	      {
+	         "username":"lucas",
+	         "rank":"2"
+	      }
+	   ]
+	}
+ 

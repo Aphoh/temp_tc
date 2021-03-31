@@ -25,7 +25,7 @@ def add_instance(model, **kwargs):
     instance = model(**kwargs)
     db.session.add(instance)
     commit_changes()
-    return instance.id
+    return instance
 
 
 def delete_instance(model, id):
