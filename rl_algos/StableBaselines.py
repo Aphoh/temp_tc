@@ -250,7 +250,7 @@ def get_environment(args):
         bin_observation_space = args.bin_observation_space,
         manual_tou_magnitude=args.manual_tou_magnitude,
         smirl_weight=args.smirl_weight
-        )
+    )
 
 
     # Check to make sure any new changes to environment follow OpenAI Gym API
