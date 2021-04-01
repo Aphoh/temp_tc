@@ -24,7 +24,7 @@ class SocialGameEnv(gym.Env):
         reward_function = "log_cost_regularized",
         bin_observation_space=False,
         manual_tou_magnitude=.3,
-        use_smirl=False):
+        smirl_weight=None):
 
         """
         SocialGameEnv for an agent determining incentives in a social game.
@@ -68,8 +68,11 @@ class SocialGameEnv(gym.Env):
         self.reward_function = reward_function
         self.bin_observation_space = bin_observation_space
         self.manual_tou_magnitude = manual_tou_magnitude
-        self.use_smirl = use_smirl
+        self.smirl_weight = smirl_weight
+        self.use_smirl = smirl_weight > 0 if smirl_weight else False
         self.hours_in_day = 10
+        self.last_smirl_reward = None
+        self.last_energy_reward = None
 
         self.day = 0
         self.days_of_week = [0, 1, 2, 3, 4]
@@ -311,7 +314,8 @@ class SocialGameEnv(gym.Env):
             TODO: Does it actually return that?
         """
 
-        total_reward = 0
+        total_energy_reward = 0
+        total_smirl_reward = 0
         for player_name in energy_consumptions:
             if player_name != "avg":
                 # get the points output from players
@@ -336,14 +340,18 @@ class SocialGameEnv(gym.Env):
                     print("Reward function not recognized")
                     raise AssertionError
 
-                if self.use_smirl:
-                    smirl_weight = 0.03
-                    total_reward += smirl_weight * self.buffer.logprob(self._get_observation())
+                total_energy_reward += reward
 
-                total_reward += reward
+        total_energy_reward = total_energy_reward / self.number_of_participants
 
+        if self.use_smirl:
+            smirl_rew = self.buffer.logprob(self._get_observation())
+            total_smirl_reward = self.smirl_weight * np.clip(smirl_rew, -300, 300)
 
-        return total_reward
+        self.last_smirl_reward = total_smirl_reward
+        self.last_energy_reward = total_energy_reward
+
+        return total_energy_reward + total_smirl_reward
 
     def step(self, action):
         """
@@ -361,7 +369,6 @@ class SocialGameEnv(gym.Env):
         Exceptions:
             raises AssertionError if action is not in the action space
         """
-
         self.action = action
 
         if not self.action_space.contains(action):
@@ -482,11 +489,11 @@ class SocialGameEnvRLLib(SocialGameEnv):
             one_day = env_config["one_day"],
             price_in_state= env_config["price_in_state"],
             energy_in_state = env_config["energy_in_state"],
-            # day_of_week = env_config["day_of_week"],
             pricing_type=env_config["pricing_type"],
             reward_function = env_config["reward_function"],
             bin_observation_space=env_config["bin_observation_space"],
             manual_tou_magnitude=env_config["manual_tou_magnitude"],
+            smirl_weight=env_config["smirl_weight"]
         )
         print("Initialized RLLib child class")
 

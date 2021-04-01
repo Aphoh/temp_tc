@@ -5,3 +5,4 @@ wandb==0.10
 stable-baselines3==0.11.1
 tensorboard==2.3.0
 ray[rllib,tune]==1.2.0
+GPUtil==1.4.0

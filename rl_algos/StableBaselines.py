@@ -2,9 +2,11 @@ import argparse
 import numpy as np
 import gym
 import utils
+from custom_callbacks import CustomCallbacks
 import wandb
 import os
 import datetime as dt
+import random
 
 from stable_baselines3 import SAC, PPO
 from stable_baselines3.sac.policies import MlpPolicy as SACMlpPolicy
@@ -39,18 +41,55 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             tb_log_name=tb_log_name
         )
 
-    elif library=="rllib":
+    elif library=="tune":
 
         ray.init()
 
         if args.algo=="ppo":
-            train_batch_size = 4000
+            config = ray_ppo.DEFAULT_CONFIG.copy()
+            config["framework"] = "torch"
+            config["env"] = SocialGameEnvRLLib
+            config["callbacks"] = CustomCallbacks
+            config["num_gpus"] = 0
+            config["num_workers"] = 4
+            config["env_config"] = vars(args)
+
+            config["lr"] = tune.uniform(0.003, 5e-6)
+            config["train_batch_size"] = tune.choice([4, 64, 256])
+            config["sgd_minibatch_size"] = tune.sample_from(lambda spec: random.choice([x for x in [2, 4, 16, 32] if 2*x <= spec.config.train_batch_size]))
+            config["clip_param"] = tune.choice([0.1, 0.2, 0.3])
+
+            def stopper(_, result):
+                return result["timesteps_total"] > num_steps
+
+            exp_dict = {
+                    'name': "PPO_HYPER_BATCH_MINI",
+                    'run_or_experiment': ray_ppo.PPOTrainer,
+                    'config': config,
+                    'num_samples': 12,
+                    'stop': stopper
+                    #'resources_per_trial': { 'cpu': 2, 'gpu': 0.25 }
+                    }
+
+            analysis = tune.run(**exp_dict)
+            analysis.results_df.to_csv("POC results.csv")
+
+    elif library=="rllib":
+
+        ray.init(local_mode=True)
+
+        if args.algo=="ppo":
+            train_batch_size = 256
             config = ray_ppo.DEFAULT_CONFIG.copy()
             config["framework"] = "torch"
             config["train_batch_size"] = train_batch_size
-            config["num_gpus"] = 0
+            config["sgd_minibatch_size"] = 16
+            config["lr"] = 0.0002
+            config["clip_param"] = 0.3
+            config["num_gpus"] = 0.2
             config["num_workers"] = 1
             config["env"] = SocialGameEnvRLLib
+            config["callbacks"] = CustomCallbacks
             config["env_config"] = vars(args)
             updated_agent = ray_ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
             to_log = ["episode_reward_mean"]
@@ -129,7 +168,7 @@ def get_agent(env, args, non_vec_env=None):
                     n_steps=128,
                     tensorboard_log=args.log_path)
 
-    elif args.library=="rllib":
+    elif args.library=="rllib" or args.library=="tune":
 
         if args.algo == "ppo":
             trainer = ray_ppo.PPOTrainer
@@ -210,8 +249,8 @@ def get_environment(args):
         reward_function=reward_function,
         bin_observation_space = args.bin_observation_space,
         manual_tou_magnitude=args.manual_tou_magnitude,
-        use_smirl=args.smirl
-        )
+        smirl_weight=args.smirl_weight
+    )
 
 
     # Check to make sure any new changes to environment follow OpenAI Gym API
@@ -236,7 +275,7 @@ def vectorize_environment(env, args, include_non_vec_env=False):
         else:
             return env, socialgame_env
 
-    elif args.library=="rllib":
+    elif args.library=="rllib" or args.library == "tune":
         #RL lib auto-vectorizes them, sweet
 
         if include_non_vec_env==False:
@@ -409,18 +448,19 @@ def parse_args():
         type = str,
         default = "F",
         choices = ["T", "F"]
-    )
+   )
     parser.add_argument(
         "--library",
         help = "What RL Library backend is in use",
         type = str,
         default = "sb3",
-        choices = ["sb3", "rllib"]
+        choices = ["sb3", "rllib", "tune"]
     )
     parser.add_argument(
-        "--smirl",
-        help="Whether to run with SMiRL",
-        action="store_true"
+        "--smirl_weight",
+        help="Whether to run with SMiRL. When using SMiRL you must specify a weight.",
+        type = float,
+        default=None,
     )
 
     args = parser.parse_args()
