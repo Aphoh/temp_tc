@@ -43,14 +43,15 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
     elif library=="tune":
 
-        ray.init(local_mode=True)
+        ray.init()
 
         if args.algo=="ppo":
             config = ray_ppo.DEFAULT_CONFIG.copy()
             config["framework"] = "torch"
             config["env"] = SocialGameEnvRLLib
             config["callbacks"] = CustomCallbacks
-            config["num_gpus"] = 1
+            config["num_gpus"] = 0
+            config["num_workers"] = 4
             config["env_config"] = vars(args)
 
             config["lr"] = tune.uniform(0.003, 5e-6)
@@ -78,10 +79,13 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
         ray.init(local_mode=True)
 
         if args.algo=="ppo":
-            train_batch_size = 4000
+            train_batch_size = 256
             config = ray_ppo.DEFAULT_CONFIG.copy()
             config["framework"] = "torch"
             config["train_batch_size"] = train_batch_size
+            config["sgd_minibatch_size"] = 16
+            config["lr"] = 0.0002
+            config["clip_param"] = 0.3
             config["num_gpus"] = 0.2
             config["num_workers"] = 1
             config["env"] = SocialGameEnvRLLib
