@@ -63,16 +63,24 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     print(log)
 
         elif args.algo=="maml":
+            #train_batch_size = 1
             config = ray_maml.DEFAULT_CONFIG.copy()
+            config["framework"] = "tf"
             config["num_gpus"] = 1
-            config["train_batch_size"] = train_batch_size
-            config["num_workers"] = 4
+            config["num_envs_per_worker"] = 2
+            config["num_workers"] = args.maml_num_workers
+            
+            config["inner_adaptation_steps"] = args.maml_inner_adaptation_steps
             config["env"] = SocialGameMetaEnv
             config["env_config"] = vars(args)
             config["normalize_actions"] = True
-            config["log_save_interval"] = 10
+            config["clip_actions"] = True
+            config["inner_lr"] = args.maml_inner_lr
+            config["lr"] = args.maml_outer_lr
+            config["vf_clip_param"] = args.maml_vf_clip_param
+            #config["log_save_interval"] = 10
             updated_agent = ray_maml.MAMLTrainer(config=config, env = SocialGameMetaEnv)
-            to_log = ["episode_reward_mean", "episode_reward_mean_adapt_1", "adaptation_delta"]
+            to_log = ["episode_reward_mean", "episode_reward_mean_adapt_5", "adaptation_delta"]
 
             for i in range(num_steps):
                 result = updated_agent.train()
@@ -422,6 +430,37 @@ def parse_args():
         help="Whether to run with SMiRL",
         action="store_true"
     )
+    parser.add_argument(
+        "--maml_num_workers",
+        help = "Number of workers to use with MAML",
+        type = int,
+        default = 1
+    )
+    parser.add_argument(
+        "--maml_inner_adaptation_steps",
+        help = "Number of inner adaptation steps for MAML",
+        type = int,
+        default = 1
+    )
+    parser.add_argument(
+        "--maml_inner_lr",
+        help = "Learning rate for inner adaptation training",
+        type = float,
+        default = 0.1
+    )
+    parser.add_argument(
+        "--maml_vf_clip_param",
+        help = "Clip param for the value function. Note that this is sensitive to the \
+                scale of the rewards. If your expected V is large, increase this.",
+        type = float,
+        default=10.0
+    )
+    parser.add_argument(
+        "--maml_outer_lr",
+        help = "Learning rate for meta adaptation training",
+        type = float,
+        default=0.001
+    )
 
     args = parser.parse_args()
 
@@ -432,7 +471,6 @@ def parse_args():
 
 
 def main():
-
     # Get args
     args = parse_args()
 
@@ -486,4 +524,6 @@ def main():
 
 
 if __name__ == "__main__":
+    #Workaround for pdb to work with multiprocessing
+    __spec__=None
     main()

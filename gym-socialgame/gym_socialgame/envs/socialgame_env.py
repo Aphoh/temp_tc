@@ -365,7 +365,7 @@ class SocialGameEnv(gym.Env):
         self.action = action
 
         if not self.action_space.contains(action):
-            print("made it within the if statement in SG_E that tests if the the action space doesn't have the action")
+            print("made it within the if statement in SG_E that tests if the action space doesn't have the action")
             action = np.asarray(action)
             if self.action_space_string == 'continuous':
                 action = np.clip(action, -1, 1) #TODO: check if correct
@@ -496,7 +496,6 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
         env_config,
         task = None):
 
-#        self.goal_direction = goal_direction if goal_direction else 1.0
 
         self.task = (task if task else {
             "person_type":np.random.choice([DeterministicFunctionPerson, CurtailAndShiftPerson]),
@@ -527,7 +526,7 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
         # shiftByHours = 3,
         # maxCurtailHours=5,
         # baseline_energy_df_variance =  # add random noise to the existing?
-
+        print(n_tasks)
         person_type = np.random.choice([DeterministicFunctionPerson, CurtailAndShiftPerson], size = (n_tasks, ))
         points_multiplier = np.random.choice(range(20), size = (n_tasks, ))
         response = np.random.choice(['t','l', 's'], size = (n_tasks, ))
@@ -551,7 +550,7 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
             temp_dict = {k: v[i] for k, v in task_parameters.items()}
             tasks_dicts.append(temp_dict)
 
-        return task_dicts
+        return tasks_dicts
 
 
     def set_task(self, task):
