@@ -17,4 +17,6 @@ RUN pip install -r ./requirements.txt
 COPY ./gym-socialgame/ ./gym-socialgame/
 RUN pip install -e ./gym-socialgame/ 
 
+ENV TUNE_RESULT_DIR=/home/$UNAME/logs
+
 USER $UNAME
