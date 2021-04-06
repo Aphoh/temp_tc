@@ -133,7 +133,7 @@ class FixedDemandPerson(Person):
 
 class DeterministicFunctionPerson(Person):
 
-	def __init__(self, baseline_energy_df, points_multiplier = 1, response = 't'):
+	def __init__(self, baseline_energy_df, points_multiplier = 1, response = 't', **kwargs):
 		super().__init__(baseline_energy_df, points_multiplier)
 		self.response = response
 
@@ -278,13 +278,14 @@ class RandomizedFunctionPerson(DeterministicFunctionPerson):
 
 # utkarsha's person 
 
-class CurtailandShiftPerson(Person):
-	def __init__(self, baseline_energy_df, points_multiplier = 1):
+class CurtailAndShiftPerson(Person):
+	def __init__(self, baseline_energy_df, points_multiplier = 1, shiftable_load_frac = .7, 
+			curtailable_load_frac = .4, shiftByHours = 3, maxCurtailHours=5, response = None, **kwargs):
 		super().__init__(baseline_energy_df, points_multiplier)
-		self.shiftableLoadFraction = 0.1
-		self.shiftByHours = 3
-		self.curtailableLoadFraction = 0.1
-		self.maxCurtailHours = 3 #Person willing to curtail for no more than these hours
+		self.shiftableLoadFraction = shiftable_load_frac
+		self.shiftByHours = shiftByHours
+		self.curtailableLoadFraction = curtailable_load_frac
+		self.maxCurtailHours = maxCurtailHours #Person willing to curtail for no more than these hours
 
 	def shiftedLoad(self, points, baseline_day=0, day_of_week=None):
 		output = np.array(self.baseline_energy)[baseline_day*24:baseline_day*24+10]

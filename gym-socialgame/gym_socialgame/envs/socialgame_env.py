@@ -4,13 +4,10 @@ from gym import spaces
 import numpy as np
 import random
 
-import tensorflow as tf
-
-from gym_socialgame.envs.utils import price_signal, fourier_points_from_action
+from gym_socialgame.envs.utils import price_signal
 from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
-
-import pickle
+from gym_socialgame.envs.buffers import GaussianBuffer
 
 class SocialGameEnv(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -25,9 +22,10 @@ class SocialGameEnv(gym.Env):
         day_of_week = False,
         pricing_type="TOU",
         reward_function = "log_cost_regularized",
-        fourier_basis_size=4,
-        manual_tou_magnitude=None
-        ):
+        bin_observation_space=False,
+        manual_tou_magnitude=.3,
+        smirl_weight=None):
+
         """
         SocialGameEnv for an agent determining incentives in a social game.
 
@@ -35,7 +33,7 @@ class SocialGameEnv(gym.Env):
             Then, environment advances one-day and agent is told that the episode has finished.)
 
         Args:
-            action_space_string: (String) either "continuous", "continuous_normalized", "multidiscrete", or "fourier"
+            action_space_string: (String) either "continuous", "continuous_normalized", "multidiscrete"
             response_type_string: (String) either "t", "s", "l" , denoting whether the office's response function is threshold, sinusoidal, or linear
             number_of_participants: (Int) denoting the number of players in the social game (must be > 0 and < 20)
             one_day: (Int) in range [-1,365] denoting which fixed day to train on .
@@ -54,8 +52,7 @@ class SocialGameEnv(gym.Env):
             number_of_participants,
             one_day,
             price_in_state,
-            energy_in_state,
-            fourier_basis_size
+            energy_in_state
         )
 
         if action_space_string == "continuous_normalized" and reward_function == "log_cost_regularized":
@@ -69,9 +66,13 @@ class SocialGameEnv(gym.Env):
         self.price_in_state = price_in_state
         self.energy_in_state = energy_in_state
         self.reward_function = reward_function
-        self.fourier_basis_size = fourier_basis_size
+        self.bin_observation_space = bin_observation_space
         self.manual_tou_magnitude = manual_tou_magnitude
+        self.smirl_weight = smirl_weight
+        self.use_smirl = smirl_weight > 0 if smirl_weight else False
         self.hours_in_day = 10
+        self.last_smirl_reward = None
+        self.last_energy_reward = None
 
         self.day = 0
         self.days_of_week = [0, 1, 2, 3, 4]
@@ -89,9 +90,10 @@ class SocialGameEnv(gym.Env):
         #Cur_iter counts length of trajectory for current step (i.e. cur_iter = i^th hour in a 10-hour trajectory)
         #For our case cur_iter just flips between 0-1 (b/c 1-step trajectory)
         self.curr_iter = 0
+        self.total_iter = 0
 
         #Create Action Space
-        self.points_length = 10
+        self.action_length = 10 # number of hours in a day
         self.action_subspace = 3
         self.action_subspace = 11
         self.action_space = self._create_action_space()
@@ -101,6 +103,10 @@ class SocialGameEnv(gym.Env):
 
         #TODO: Check initialization of prev_energy
         self.prev_energy = np.zeros(10)
+
+        if self.use_smirl:
+            self.buffer = GaussianBuffer(self.action_length)
+
 
         print("\n Social Game Environment Initialized! Have Fun! \n")
 
@@ -152,21 +158,14 @@ class SocialGameEnv(gym.Env):
 
         #Making a symmetric, continuous space to help learning for continuous control (suggested in StableBaselines doc.)
         if self.action_space_string == "continuous":
-            return spaces.Box(low=-1, high=1, shape=(self.points_length,), dtype=np.float32)
+            return spaces.Box(low=-1, high=1, shape=(self.action_length,), dtype=np.float32)
 
         elif self.action_space_string == "continuous_normalized":
-            return spaces.Box(low=0, high=np.inf, shape=(self.points_length,), dtype=np.float32)
+            return spaces.Box(low = 0, high = np.inf, shape = (self.action_length,), dtype=np.float32)
 
         elif self.action_space_string == "multidiscrete":
-            discrete_space = [self.action_subspace] * self.points_length  # num of actions times the length of the action space. [a1, a2, a3], [a1, a2, a3]
+            discrete_space = [self.action_subspace] * self.action_length  # num of actions times the length of the action space. [a1, a2, a3], [a1, a2, a3]
             return spaces.MultiDiscrete(discrete_space)
-
-        elif self.action_space_string == "fourier":
-            return spaces.Box(
-                low=-2, high=2, shape=(2*self.fourier_basis_size - 1,), dtype=np.float32
-            )
-
-
 
     def _create_agents(self):
         """
@@ -195,8 +194,7 @@ class SocialGameEnv(gym.Env):
         my_baseline_energy = pd.DataFrame(data = {"net_energy_use" : working_hour_energy})
 
         for i in range(self.number_of_participants):
-            player = DeterministicFunctionPerson(my_baseline_energy, points_multiplier = 10, response = 'l')
-            #player = CurtailandShiftPerson(my_baseline_energy, points_multiplier = 10)
+            player = CurtailAndShiftPerson(my_baseline_energy, points_multiplier = 10, response = 'l')
             player_dict['player_{}'.format(i)] = player
 
         return player_dict
@@ -258,24 +256,17 @@ class SocialGameEnv(gym.Env):
         Args:
             Action: 10-dim vector corresponding to action for each hour 8AM - 5PM
 
-            or a 2*fourier_basis_size - 1 length vector corresponding to fourier basis weights
-            if action_space_string == "fourier"
-
-
         Returns: Points: 10-dim vector of incentives for game (same incentive for each player)
         """
         if self.action_space_string == "multidiscrete":
             #Mapping 0 -> 0.0, 1 -> 5.0, 2 -> 10.0
-            points = 5*action
+            points = action * (10 / (self.action_subspace -1))
         elif self.action_space_string == 'continuous':
             #Continuous space is symmetric [-1,1], we map to -> [0,10] by adding 1 and multiplying by 5
             points = 5 * (action + np.ones_like(action))
 
         elif self.action_space_string == "continuous_normalized":
             points = 10 * (action / np.sum(action))
-
-        elif self.action_space_string == "fourier":
-            points = fourier_points_from_action(action, self.points_length, self.fourier_basis_size)
 
         return points
 
@@ -320,9 +311,11 @@ class SocialGameEnv(gym.Env):
 
         Returns:
             Energy_consumption: Dictionary containing the energy usage by player and the average energy used in the office (key = "avg")
+            TODO: Does it actually return that?
         """
 
-        total_reward = 0
+        total_energy_reward = 0
+        total_smirl_reward = 0
         for player_name in energy_consumptions:
             if player_name != "avg":
                 # get the points output from players
@@ -333,20 +326,32 @@ class SocialGameEnv(gym.Env):
                 player_max_demand = player.get_max_demand()
                 player_energy = energy_consumptions[player_name]
                 player_reward = Reward(player_energy, price, player_min_demand, player_max_demand)
-
                 if reward_function == "scaled_cost_distance":
-                    player_ideal_demands = player_reward.ideal_use_calculation()
-                    reward = player_reward.scaled_cost_distance(player_ideal_demands)
+                   player_ideal_demands = player_reward.ideal_use_calculation()
+                   reward = player_reward.scaled_cost_distance(player_ideal_demands)
 
                 elif reward_function == "log_cost_regularized":
-                    reward = player_reward.log_cost_regularized()
+                   reward = player_reward.log_cost_regularized()
 
                 elif reward_function == "log_cost":
                     reward = player_reward.log_cost()
 
-                total_reward += reward
+                else:
+                    print("Reward function not recognized")
+                    raise AssertionError
 
-        return total_reward
+                total_energy_reward += reward
+
+        total_energy_reward = total_energy_reward / self.number_of_participants
+
+        if self.use_smirl:
+            smirl_rew = self.buffer.logprob(self._get_observation())
+            total_smirl_reward = self.smirl_weight * np.clip(smirl_rew, -300, 300)
+
+        self.last_smirl_reward = total_smirl_reward
+        self.last_energy_reward = total_energy_reward
+
+        return total_energy_reward + total_smirl_reward
 
     def step(self, action):
         """
@@ -364,7 +369,6 @@ class SocialGameEnv(gym.Env):
         Exceptions:
             raises AssertionError if action is not in the action space
         """
-
         self.action = action
 
         if not self.action_space.contains(action):
@@ -376,13 +380,10 @@ class SocialGameEnv(gym.Env):
             elif self.action_space_string == 'multidiscrete':
                 action = np.clip(action, 0, self.action_subspace - 1)
 
-            elif self.action_space_string == "fourier":
-                assert False, "Fourier basis mode, got incorrect action. This should never happen. action: {}".format(action)
-
-
         prev_price = self.prices[(self.day)]
         self.day = (self.day + 1) % 365
         self.curr_iter += 1
+        self.total_iter +=1
 
         done = self.curr_iter > 0
 
@@ -396,20 +397,29 @@ class SocialGameEnv(gym.Env):
 
         observation = self._get_observation()
         reward = self._get_reward(prev_price, energy_consumptions, reward_function = self.reward_function)
+
+        if self.use_smirl:
+            self.buffer.add(observation)
+
         info = {}
         return observation, reward, done, info
 
     def _get_observation(self):
-        price = self.prices[self.day]
+        prev_price = self.prices[ (self.day - 1) % 365]
+        next_price = self.prices[self.day]
 
-        obs = []
+        if self.bin_observation_space:
+            self.prev_energy = np.round(self.prev_energy, -1)
+
+        next_observation = np.array([])
+
         if self.price_in_state:
-            obs.append(price)
-        elif self.energy_in_state:
-            obs.append(self.prev_energy)
+            next_observation = np.concatenate((next_observation, next_price))
 
+        if self.energy_in_state:
+            next_observation = np.concatenate((next_observation, self.prev_energy))
 
-        return np.concatenate(obs)
+        return next_observation
 
     def reset(self):
         """ Resets the environment on the current day """
@@ -423,7 +433,7 @@ class SocialGameEnv(gym.Env):
 
 
     def check_valid_init_inputs(self, action_space_string: str, response_type_string: str, number_of_participants = 10,
-                one_day = False, price_in_state = False, energy_in_state = False, fourier_basis_size = 4):
+                one_day = False, price_in_state = False, energy_in_state = False):
 
         """
         Purpose: Verify that all initialization variables are valid
@@ -446,7 +456,7 @@ class SocialGameEnv(gym.Env):
         #Checking that action_space_string is valid
         assert isinstance(action_space_string, str), "action_space_str is not of type String. Instead got type {}".format(type(action_space_string))
         action_space_string = action_space_string.lower()
-        assert action_space_string in ["continuous", "multidiscrete", "fourier", "continuous_normalized"], "action_space_str is not continuous or discrete. Instead got value {}".format(action_space_string)
+        assert action_space_string in ["continuous", "multidiscrete", "continuous_normalized"], "action_space_str is not continuous or discrete. Instead got value {}".format(action_space_string)
 
         #Checking that response_type_string is valid
         assert isinstance(response_type_string, str), "Variable response_type_string should be of type String. Instead got type {}".format(type(response_type_string))
@@ -470,11 +480,138 @@ class SocialGameEnv(gym.Env):
         assert isinstance(energy_in_state, bool), "Variable one_day is not of type Boolean. Instead got type {}".format(type(energy_in_state))
         print("all inputs valid")
 
-        assert isinstance(
-            fourier_basis_size, int
-        ), "Variable fourier_basis_size is not of type int. Instead got type {}".format(
-            type(fourier_basis_size)
+class SocialGameEnvRLLib(SocialGameEnv):
+    def __init__(self, env_config):
+        super().__init__(
+            action_space_string = env_config["action_space_string"],
+            response_type_string = env_config["response_type_string"],
+            number_of_participants = env_config["number_of_participants"],
+            one_day = env_config["one_day"],
+            price_in_state= env_config["price_in_state"],
+            energy_in_state = env_config["energy_in_state"],
+            pricing_type=env_config["pricing_type"],
+            reward_function = env_config["reward_function"],
+            bin_observation_space=env_config["bin_observation_space"],
+            manual_tou_magnitude=env_config["manual_tou_magnitude"],
+            smirl_weight=env_config["smirl_weight"]
         )
-        assert fourier_basis_size > 0, "Variable fourier_basis_size must be positive. Got {}".format(fourier_basis_size)
+        print("Initialized RLLib child class")
+
+class SocialGameMetaEnv(SocialGameEnvRLLib):
+
+    def __init__(self,
+        env_config,
+        task = None):
+
+#        self.goal_direction = goal_direction if goal_direction else 1.0
+
+        self.task = (task if task else {
+            "person_type":np.random.choice([DeterministicFunctionPerson, CurtailAndShiftPerson]),
+            "points_multiplier":np.random.choice(range(20)),
+            "response":np.random.choice(['t','l', 's']),
+            "shiftable_load_frac":np.random.uniform(0, 1),
+            "curtailable_load_frac":np.random.uniform(0, 1),
+            "shiftByHours":np.random.choice(range(8), ),
+            "maxCurtailHours":np.random.choice(range(8),)
+        })
+
+        super().__init__(
+            env_config=env_config,
+        )
+
+        self.hours_in_day = 10
+
+    def sample_tasks(self, n_tasks):
+        """
+        n_tasks will be passed in as a hyperparameter
+        """
+        # points_multiplier = 1,
+        # response = 't'
+        # baseline_energy_df,
+        # points_multiplier = 1,
+        # shiftable_load_frac = .7,
+		# curtailable_load_frac = .4,
+        # shiftByHours = 3,
+        # maxCurtailHours=5,
+        # baseline_energy_df_variance =  # add random noise to the existing?
+
+        person_type = np.random.choice([DeterministicFunctionPerson, CurtailAndShiftPerson], size = (n_tasks, ))
+        points_multiplier = np.random.choice(range(20), size = (n_tasks, ))
+        response = np.random.choice(['t','l', 's'], size = (n_tasks, ))
+        shiftable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
+        curtailable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
+        shiftByHours = np.random.choice(range(8), (n_tasks, ))
+        maxCurtailHours=np.random.choice(range(8), (n_tasks, ))
+
+        task_parameters = {
+            "person_type":person_type,
+            "points_multiplier":points_multiplier,
+            "response":response,
+            "shiftable_load_frac":shiftable_load_frac,
+            "curtailable_load_frac":curtailable_load_frac,
+            "shiftByHours":shiftByHours,
+            "maxCurtailHours":maxCurtailHours
+        }
+
+        tasks_dicts = []
+        for i in range(n_tasks):
+            temp_dict = {k: v[i] for k, v in task_parameters.items()}
+            tasks_dicts.append(temp_dict)
+
+        return task_dicts
+
+
+    def set_task(self, task):
+        """
+        Args:
+            task: task of the meta-learning environment
+        """
+        self.task=task
+        # self.person_type = task["person_type"]
+        # self.points_multiplier = task["points_multiplier"]
+        # self.response = task["response"]
+        # self.shiftable_load_frac = task["shiftable_load_frac"]
+        # self.curtailable_load_frac = task["curtailable_load_frac"]
+        # self.shiftByHours = task["shiftByHours"]
+        # self.maxCurtailHours = task["maxCurtailHours"]
+
+    def get_task(self):
+        """
+        Returns:
+            task: task of the meta-learning environment
+        """
+        return self.task
+
+
+    def _create_agents(self):
+        """
+        Purpose: Create the participants of the social game. We create a game with n players, where n = self.number_of_participants
+        This function has been modified to create a variety of people environments to work with MAML
+
+        Args:
+            None
+
+        Returns:
+              agent_dict: Dictionary of players, each with response function based on self.response_type_string
+
+        """
+
+        player_dict = {}
+
+        # Sample Energy from average energy in the office (pre-treatment) from the last experiment
+        # Reference: Lucas Spangher, et al. Engineering  vs.  ambient  typevisualizations:  Quantifying effects of different data visualizations on energy consumption. 2019
+
+        sample_energy = np.array([ 0.28,  11.9,   16.34,  16.8,  17.43,  16.15,  16.23,  15.88,  15.09,  35.6,
+                                123.5,  148.7,  158.49, 149.13, 159.32, 157.62, 158.8,  156.49, 147.04,  70.76,
+                                42.87,  23.13,  22.52,  16.8 ])
+
+        #only grab working hours (8am - 5pm)
+        working_hour_energy = sample_energy[8:18] ### this needs to be changed for 18 hours!!!!!
+        my_baseline_energy = pd.DataFrame(data = {"net_energy_use" : working_hour_energy})
+        for i in range(self.number_of_participants):
+            player = self.task["person_type"](baseline_energy_df = my_baseline_energy, **self.task)
+            player_dict['player_{}'.format(i)] = player
+
+        return player_dict
 
 
