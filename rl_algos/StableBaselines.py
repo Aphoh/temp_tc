@@ -24,7 +24,7 @@ import ray.rllib.agents.ppo as ray_ppo
 import ray.rllib.agents.maml as ray_maml
 from ray import tune
 from ray.tune.integration.wandb import (wandb_mixin, WandbLoggerCallback)
-from ray.tune.logger import (DEFAULT_LOGGERS, pretty_print)
+from ray.tune.logger import (DEFAULT_LOGGERS, pretty_print, UnifiedLogger)
 from ray.tune.integration.wandb import WandbLogger
 
 import pdb
@@ -63,13 +63,13 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 return result["timesteps_total"] > num_steps
 
             exp_dict = {
-                    'name': "PPO_HYPER_BATCH_MINI",
+                    'name': args.exp_name,
                     'run_or_experiment': ray_ppo.PPOTrainer,
                     'config': config,
                     'num_samples': 12,
-                    'stop': stopper
-                    #'resources_per_trial': { 'cpu': 2, 'gpu': 0.25 }
-                    }
+                    'stop': stopper,
+                    'local_dir': os.path.abspath(args.base_log_dir)
+                }
 
             analysis = tune.run(**exp_dict)
             analysis.results_df.to_csv("POC results.csv")
@@ -91,7 +91,9 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["env"] = SocialGameEnvRLLib
             config["callbacks"] = CustomCallbacks
             config["env_config"] = vars(args)
-            updated_agent = ray_ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
+            logger_creator = utils.custom_logger_creator(args.log_path)
+
+            updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
             to_log = ["episode_reward_mean"]
             for i in range(int(np.ceil(num_steps/train_batch_size))):
                 result = updated_agent.train()
@@ -399,7 +401,7 @@ def parse_args():
         "--exp_name",
         help="experiment_name",
         type=str,
-        default=str(dt.datetime.today())
+        default="experiment"
     )
     parser.add_argument(
         "--planning_steps",
@@ -465,8 +467,7 @@ def parse_args():
 
     args = parser.parse_args()
 
-    args.log_path = os.path.join(args.base_log_dir, args.exp_name + "/")
-    args.rl_log_path = os.path.join(args.log_path, "rl/")
+    args.log_path = os.path.join(os.path.abspath(args.base_log_dir), "{}_{}".format(args.exp_name, str(dt.datetime.today())))
 
     return args
 
@@ -480,7 +481,8 @@ def main():
     args_convert_bool(args)
 
     if args.wandb:
-        wandb.init(project="energy-demand-response-game", entity="social-game-rl", sync_tensorboard=True)
+        wandb.init(project="energy-demand-response-game", entity="social-game-rl")
+        wandb.tensorboard.patch(root_logdir=args.log_path) # patching the logdir directly seems to work
         wandb.config.update(args)
 
     # Create environments
