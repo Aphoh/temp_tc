@@ -25,6 +25,11 @@ from ray.tune.integration.wandb import (wandb_mixin, WandbLoggerCallback)
 from ray.tune.logger import (DEFAULT_LOGGERS, pretty_print)
 from ray.tune.integration.wandb import WandbLogger
 
+from ray.rllib.agents.maml.maml_tf_policy import MAMLTFPolicy
+from ray.rllib.agents.maml.maml_torch_policy import MAMLTorchPolicy
+from ray.rllib.agents.trainer_template import build_trainer
+
+from pprint import pprint
 import pdb
 
 def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
@@ -41,21 +46,13 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
     elif library=="rllib":
 
-        ray.init()
+        #ray.init()
 
         if args.algo=="ppo":
-            train_batch_size = 4000
-            config = ray_ppo.DEFAULT_CONFIG.copy()
-            config["framework"] = "torch"
-            config["train_batch_size"] = train_batch_size
-            config["num_gpus"] = 0
-            config["num_workers"] = 1
-            config["env"] = SocialGameEnvRLLib
-            config["env_config"] = vars(args)
-            updated_agent = ray_ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
+            
             to_log = ["episode_reward_mean"]
             for i in range(int(np.ceil(num_steps/train_batch_size))):
-                result = updated_agent.train()
+                result = agent.train()
                 log = {name: result[name] for name in to_log}
                 if args.wandb:
                     wandb.log(log)
@@ -63,33 +60,19 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     print(log)
 
         elif args.algo=="maml":
-            #train_batch_size = 1
-            config = ray_maml.DEFAULT_CONFIG.copy()
-            config["framework"] = "tf"
-            config["num_gpus"] = 1
-            config["num_envs_per_worker"] = 2
-            config["num_workers"] = args.maml_num_workers
             
-            config["inner_adaptation_steps"] = args.maml_inner_adaptation_steps
-            config["env"] = SocialGameMetaEnv
-            config["env_config"] = vars(args)
-            config["normalize_actions"] = True
-            config["clip_actions"] = True
-            config["inner_lr"] = args.maml_inner_lr
-            config["lr"] = args.maml_outer_lr
-            config["vf_clip_param"] = args.maml_vf_clip_param
-            #config["log_save_interval"] = 10
-            updated_agent = ray_maml.MAMLTrainer(config=config, env = SocialGameMetaEnv)
             to_log = ["episode_reward_mean", "episode_reward_mean_adapt_5", "adaptation_delta"]
 
             for i in range(num_steps):
-                result = updated_agent.train()
+                result = agent.train()
                 log = {name: result[name] for name in to_log}
                 if args.wandb:
                     wandb.log(log)
                     wandb.log({"total_loss": result["info"]["learner"]["default_policy"]["total_loss"]})
                 else:
                     print(log)
+                if i % args.checkpoint_interval == 0:
+                    agent.save_checkpoint("./maml_ckpts")
 
 def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
     """
@@ -109,6 +92,72 @@ def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=Fals
     print("Test Results: ")
     print("Mean Reward: {:.3f}".format(mean_reward))
     print("Std Reward: {:.3f}".format(std_reward))
+
+
+def maml_eval_fn(trainer, args):
+    """
+    Purpose: Evaluate policy on environment over num_eval_episodes and print results
+
+    Args:
+        Model: Stable baselines model
+        Env: Gym environment for evaluation
+        num_eval_episodes: (Int) number of episodes to evaluate policy
+        list_reward_per_episode: (Boolean) Whether or not to return a list containing rewards per episode (instead of mean reward over all episodes)
+
+    """
+    # def dummy_validate(config):
+    #     pass
+    # MAMLValTrainer = build
+    config = ray_maml.DEFAULT_CONFIG.copy()
+    config["framework"] = "tf1"
+    config["num_gpus"] = 1
+    config["num_envs_per_worker"] = 2
+    config["num_workers"] = args.maml_num_workers
+    
+    config["inner_adaptation_steps"] = 10
+    config["env"] = SocialGameMetaEnv
+    config["env_config"] = vars(args)
+    config["env_config"]["mode"] = "test"
+    config["normalize_actions"] = True
+    config["clip_actions"] = True
+    config["inner_lr"] = args.maml_inner_lr
+    config["lr"] = 0
+    config["vf_clip_param"] = args.maml_vf_clip_param
+    config["maml_optimizer_steps"] = 1
+    #config["reuse_actors"] = True
+    # config["evaluation_config"] = config["env_config"]
+    # config["evaluation_interval"] = 10
+    # config["evaluation_num_episodes"] = 10
+    # config["evaluation_num_workers"] = 1
+    model_weights = trainer.get_weights()
+    print("got model weight")
+    trainer.stop()
+    print("trainer stopped")
+    updated_agent = ray_maml.MAMLTrainer(config=config, env = SocialGameMetaEnv)
+    print("started new trainer")
+    updated_agent.set_weights(model_weights)
+    print("set new weights")
+    # import pprint; pp = pprint.PrettyPrinter(indent=4); print(pp.pprint(updated_agent.__dict__))
+    # import pdb; pdb.set_trace()
+    to_log = ["episode_reward_mean", "episode_reward_mean_adapt_5", "adaptation_delta"]
+
+    for i in range(10):
+        print("step {}".format(i))
+        result = updated_agent.train()
+        log = {"val_maml_" + name: result[name] for name in to_log}
+        if args.wandb:
+            wandb.log({'validation_step': i})
+            wandb.log(log)
+            wandb.log({"val_maml_total_loss": result["info"]["learner"]["default_policy"]["total_loss"]})
+        else:
+            print(log)
+    model_weights2 = updated_agent.get_weights()
+    np.testing.assert_equal(model_weights2, model_weights, err_msg="Weights were changed during validation")
+    if str(model_weights) != str(model_weights2):
+        print("Weights were changed")
+    else:
+        print("Weights were not changed")
+    
 
 def get_agent(env, args, non_vec_env=None):
     """
@@ -140,11 +189,34 @@ def get_agent(env, args, non_vec_env=None):
     elif args.library=="rllib":
 
         if args.algo == "ppo":
-            trainer = ray_ppo.PPOTrainer
+            train_batch_size = 4000
+            config = ray_ppo.DEFAULT_CONFIG.copy()
+            config["framework"] = "torch"
+            config["train_batch_size"] = train_batch_size
+            config["num_gpus"] = 0
+            config["num_workers"] = 1
+            config["env"] = SocialGameEnvRLLib
+            config["env_config"] = vars(args)
+            trainer = ray_ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
             return trainer
 
         elif args.algo == "maml":
-            trainer = ray_maml.MAMLTrainer
+            config = ray_maml.DEFAULT_CONFIG.copy()
+            config["framework"] = "tf1"
+            config["num_gpus"] = 1
+            config["num_envs_per_worker"] = 2
+            config["num_workers"] = args.maml_num_workers
+            
+            config["inner_adaptation_steps"] = args.maml_inner_adaptation_steps
+            config["env"] = SocialGameMetaEnv
+            config["env_config"] = vars(args)
+            config["env_config"]["mode"] = "train"
+            config["normalize_actions"] = True
+            config["clip_actions"] = True
+            config["inner_lr"] = args.maml_inner_lr
+            config["lr"] = args.maml_outer_lr
+            config["vf_clip_param"] = args.maml_vf_clip_param
+            trainer = ray_maml.MAMLTrainer(config=config, env = SocialGameMetaEnv)
             return trainer
 
     else:
@@ -255,7 +327,6 @@ def vectorize_environment(env, args, include_non_vec_env=False):
     else:
         print("Wrong library!")
         raise AssertionError
-
 
 def parse_args():
     """
@@ -461,6 +532,11 @@ def parse_args():
         type = float,
         default=0.001
     )
+    parser.add_argument(
+        "--checkpoint_interval",
+        help = "How many training iterations between checkpoints (only implemented for MAML)",
+        type = int
+    )
 
     args = parser.parse_args()
 
@@ -486,6 +562,9 @@ def main():
     if os.path.exists(args.log_path):
         print("Choose a new name for the experiment, log dir already exists")
         raise ValueError
+
+    if args.library == "rllib" :
+        ray.init()
 
     env = get_environment(
         args,
@@ -517,7 +596,8 @@ def main():
 
     # Print evaluation of policy
     print("Beginning Evaluation")
-
+    if args.algo == "maml":
+        maml_eval_fn(model, args)
     print(
         "If there was no planning model involved, remember that the output will be in the log dir"
     )
