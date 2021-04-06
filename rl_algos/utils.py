@@ -1,7 +1,9 @@
 import os
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
+from ray.tune.logger import UnifiedLogger
 import numpy as np
+import datetime as dt
 
 def fourier_points_from_action(action, points_length, fourier_basis_size):
     assert fourier_basis_size == (action.size + 1) // 2, "Incorrect fourier basis size for actions"
@@ -16,6 +18,15 @@ def fourier_points_from_action(action, points_length, fourier_basis_size):
     points = np.clip(points, 0, 10)
     return points
 
+
+def custom_logger_creator(log_path):
+
+    def logger_creator(config):
+        if not os.path.exists(log_path):
+            os.makedirs(log_path)
+        return UnifiedLogger(config, log_path, loggers=None)
+
+    return logger_creator
 
 #Helper function
 def string2bool(input_str: str):
