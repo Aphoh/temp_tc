@@ -495,8 +495,7 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
     def __init__(self,
         env_config,
         task = None):
-
-
+        self.mode = env_config["mode"]
         self.task = (task if task else {
             "person_type":np.random.choice([DeterministicFunctionPerson, CurtailAndShiftPerson]),
             "points_multiplier":np.random.choice(range(20)),
@@ -506,7 +505,6 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
             "shiftByHours":np.random.choice(range(8), ),
             "maxCurtailHours":np.random.choice(range(8),)
         })
-
         super().__init__(
             env_config=env_config,
         )
@@ -517,24 +515,26 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
         """
         n_tasks will be passed in as a hyperparameter
         """
-        # points_multiplier = 1,
-        # response = 't'
-        # baseline_energy_df,
-        # points_multiplier = 1,
-        # shiftable_load_frac = .7,
-		# curtailable_load_frac = .4,
-        # shiftByHours = 3,
-        # maxCurtailHours=5,
-        # baseline_energy_df_variance =  # add random noise to the existing?
-        print(n_tasks)
-        person_type = np.random.choice([DeterministicFunctionPerson, CurtailAndShiftPerson], size = (n_tasks, ))
-        points_multiplier = np.random.choice(range(20), size = (n_tasks, ))
-        response = np.random.choice(['t','l', 's'], size = (n_tasks, ))
-        shiftable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
-        curtailable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
-        shiftByHours = np.random.choice(range(8), (n_tasks, ))
-        maxCurtailHours=np.random.choice(range(8), (n_tasks, ))
-
+        if self.mode == "train":
+            print("SAMPLING TRAIN ENVIRONMENT")
+            person_type = np.random.choice([DeterministicFunctionPerson], size = (n_tasks, ))
+            points_multiplier = np.random.choice(range(20), size = (n_tasks, ))
+            response = np.random.choice(['t','l', 's'], size = (n_tasks, ))
+            shiftable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
+            curtailable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
+            shiftByHours = np.random.choice(range(8), (n_tasks, ))
+            maxCurtailHours=np.random.choice(range(8), (n_tasks, ))
+        elif self.mode == "test":
+            print("SAMPLING TEST ENVIRONMENT")
+            person_type = np.random.choice([CurtailAndShiftPerson], size = (n_tasks, ))
+            points_multiplier = np.random.choice(range(20), size = (n_tasks, ))
+            response = np.random.choice(['t','l', 's'], size = (n_tasks, ))
+            shiftable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
+            curtailable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
+            shiftByHours = np.random.choice(range(8), (n_tasks, ))
+            maxCurtailHours=np.random.choice(range(8), (n_tasks, ))
+        else:
+            raise Exception("Please specify whether this is a training or evaluation run")
         task_parameters = {
             "person_type":person_type,
             "points_multiplier":points_multiplier,
@@ -605,5 +605,3 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
             player_dict['player_{}'.format(i)] = player
 
         return player_dict
-
-
