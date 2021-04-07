@@ -2,9 +2,11 @@ import argparse
 import numpy as np
 import gym
 import utils
+from custom_callbacks import CustomCallbacks
 import wandb
 import os
 import datetime as dt
+import random
 
 from stable_baselines3 import SAC, PPO
 from stable_baselines3.sac.policies import MlpPolicy as SACMlpPolicy
@@ -22,7 +24,7 @@ import ray.rllib.agents.ppo as ray_ppo
 import ray.rllib.agents.maml as ray_maml
 from ray import tune
 from ray.tune.integration.wandb import (wandb_mixin, WandbLoggerCallback)
-from ray.tune.logger import (DEFAULT_LOGGERS, pretty_print)
+from ray.tune.logger import (DEFAULT_LOGGERS, pretty_print, UnifiedLogger)
 from ray.tune.integration.wandb import WandbLogger
 import pickle
 
@@ -41,12 +43,59 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             tb_log_name=tb_log_name
         )
 
-    elif library=="rllib":
+    elif library=="tune":
 
         #ray.init()
 
         if args.algo=="ppo":
-            
+            config = ray_ppo.DEFAULT_CONFIG.copy()
+            config["framework"] = "torch"
+            config["env"] = SocialGameEnvRLLib
+            config["callbacks"] = CustomCallbacks
+            config["num_gpus"] = 1
+            config["num_workers"] = 4
+            config["env_config"] = vars(args)
+
+            config["lr"] = tune.uniform(0.003, 5e-6)
+            config["train_batch_size"] = tune.choice([4, 64, 256])
+            config["sgd_minibatch_size"] = tune.sample_from(lambda spec: random.choice([x for x in [2, 4, 16, 32] if 2*x <= spec.config.train_batch_size]))
+            config["clip_param"] = tune.choice([0.1, 0.2, 0.3])
+
+            def stopper(_, result):
+                return result["timesteps_total"] > num_steps
+
+            exp_dict = {
+                    'name': args.exp_name,
+                    'run_or_experiment': ray_ppo.PPOTrainer,
+                    'config': config,
+                    'num_samples': 12,
+                    'stop': stopper,
+                    'local_dir': os.path.abspath(args.base_log_dir)
+                }
+
+            analysis = tune.run(**exp_dict)
+            analysis.results_df.to_csv("POC results.csv")
+
+    elif library=="rllib":
+
+        ray.init(local_mode=True)
+
+        if args.algo=="ppo":
+            train_batch_size = 256
+            config = ray_ppo.DEFAULT_CONFIG.copy()
+            config["framework"] = "torch"
+            config["train_batch_size"] = train_batch_size
+            config["sgd_minibatch_size"] = 16
+            config["lr"] = 0.0002
+            config["clip_param"] = 0.3
+            config["num_gpus"] = 0.2
+            config["num_workers"] = 1
+            config["env"] = SocialGameEnvRLLib
+            config["callbacks"] = CustomCallbacks
+            config["env_config"] = vars(args)
+            logger_creator = utils.custom_logger_creator(args.log_path)
+
+            updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
             to_log = ["episode_reward_mean"]
             for i in range(int(np.ceil(num_steps/train_batch_size))):
                 result = agent.train()
@@ -171,7 +220,7 @@ def get_agent(env, args, non_vec_env=None):
                     n_steps=128,
                     tensorboard_log=args.log_path)
 
-    elif args.library=="rllib":
+    elif args.library=="rllib" or args.library=="tune":
 
         if args.algo == "ppo":
             train_batch_size = 4000
@@ -276,8 +325,8 @@ def get_environment(args):
         reward_function=reward_function,
         bin_observation_space = args.bin_observation_space,
         manual_tou_magnitude=args.manual_tou_magnitude,
-        use_smirl=args.smirl
-        )
+        smirl_weight=args.smirl_weight
+    )
 
 
     # Check to make sure any new changes to environment follow OpenAI Gym API
@@ -302,7 +351,7 @@ def vectorize_environment(env, args, include_non_vec_env=False):
         else:
             return env, socialgame_env
 
-    elif args.library=="rllib":
+    elif args.library=="rllib" or args.library == "tune":
         #RL lib auto-vectorizes them, sweet
 
         if include_non_vec_env==False:
@@ -425,7 +474,7 @@ def parse_args():
         "--exp_name",
         help="experiment_name",
         type=str,
-        default=str(dt.datetime.today())
+        default="experiment"
     )
     parser.add_argument(
         "--planning_steps",
@@ -474,18 +523,19 @@ def parse_args():
         type = str,
         default = "F",
         choices = ["T", "F"]
-    )
+   )
     parser.add_argument(
         "--library",
         help = "What RL Library backend is in use",
         type = str,
         default = "sb3",
-        choices = ["sb3", "rllib"]
+        choices = ["sb3", "rllib", "tune"]
     )
     parser.add_argument(
-        "--smirl",
-        help="Whether to run with SMiRL",
-        action="store_true"
+        "--smirl_weight",
+        help="Whether to run with SMiRL. When using SMiRL you must specify a weight.",
+        type = float,
+        default=None,
     )
     parser.add_argument(
         "--maml_num_workers",
@@ -540,8 +590,7 @@ def parse_args():
 
     args = parser.parse_args()
 
-    args.log_path = os.path.join(args.base_log_dir, args.exp_name + "/")
-    args.rl_log_path = os.path.join(args.log_path, "rl/")
+    args.log_path = os.path.join(os.path.abspath(args.base_log_dir), "{}_{}".format(args.exp_name, str(dt.datetime.today())))
 
     return args
 
@@ -554,7 +603,8 @@ def main():
     args_convert_bool(args)
 
     if args.wandb:
-        wandb.init(project="energy-demand-response-game", entity="social-game-rl", sync_tensorboard=True)
+        wandb.init(project="energy-demand-response-game", entity="social-game-rl")
+        wandb.tensorboard.patch(root_logdir=args.log_path) # patching the logdir directly seems to work
         wandb.config.update(args)
 
     # Create environments
