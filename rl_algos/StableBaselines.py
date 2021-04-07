@@ -26,10 +26,7 @@ from ray import tune
 from ray.tune.integration.wandb import (wandb_mixin, WandbLoggerCallback)
 from ray.tune.logger import (DEFAULT_LOGGERS, pretty_print, UnifiedLogger)
 from ray.tune.integration.wandb import WandbLogger
-
-from ray.rllib.agents.maml.maml_tf_policy import MAMLTFPolicy
-from ray.rllib.agents.maml.maml_torch_policy import MAMLTorchPolicy
-from ray.rllib.agents.trainer_template import build_trainer
+import pickle
 
 from pprint import pprint
 import pdb
@@ -116,12 +113,16 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 result = agent.train()
                 log = {name: result[name] for name in to_log}
                 if args.wandb:
-                    wandb.log(log)
+                    wandb.log(log, commit=False)
                     wandb.log({"total_loss": result["info"]["learner"]["default_policy"]["total_loss"]})
                 else:
                     print(log)
                 if i % args.checkpoint_interval == 0:
-                    agent.save_checkpoint("./maml_ckpts")
+                    ckpt_dir = "maml_ckpts/{}{}.ckpt".format(wandb.run.name, i)
+                    with open(ckpt_dir, "wb") as ckpt_file:
+                        agent_weights = agent.get_policy().get_weights()
+                        pickle.dump(agent_weights, ckpt_file)
+                    #agent.save("./maml_ckpts") # does not load back correctly
 
 def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
     """
@@ -143,64 +144,48 @@ def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=Fals
     print("Std Reward: {:.3f}".format(std_reward))
 
 
-def maml_eval_fn(trainer, args):
-    """
-    Purpose: Evaluate policy on environment over num_eval_episodes and print results
 
+def maml_eval_fn(model_weights, args):
+    """
+    Purpose: Evaluate a model on 100 steps in MAML random test environments over the social game metaenvironment
     Args:
-        Model: Stable baselines model
-        Env: Gym environment for evaluation
-        num_eval_episodes: (Int) number of episodes to evaluate policy
-        list_reward_per_episode: (Boolean) Whether or not to return a list containing rewards per episode (instead of mean reward over all episodes)
+        trainer: MAMLTrainer from RLLib
+        args: command line arguments
 
     """
-    # def dummy_validate(config):
-    #     pass
-    # MAMLValTrainer = build
     config = ray_maml.DEFAULT_CONFIG.copy()
     config["framework"] = "tf1"
     config["num_gpus"] = 1
     config["num_envs_per_worker"] = 2
     config["num_workers"] = args.maml_num_workers
     
-    config["inner_adaptation_steps"] = 10
+    config["inner_adaptation_steps"] = 2
     config["env"] = SocialGameMetaEnv
     config["env_config"] = vars(args)
     config["env_config"]["mode"] = "test"
     config["normalize_actions"] = True
     config["clip_actions"] = True
     config["inner_lr"] = args.maml_inner_lr
-    config["lr"] = 0
+    config["lr"] = 0 # make lr 0 so no outer adaptation occurs for validation
     config["vf_clip_param"] = args.maml_vf_clip_param
     config["maml_optimizer_steps"] = 1
-    #config["reuse_actors"] = True
-    # config["evaluation_config"] = config["env_config"]
-    # config["evaluation_interval"] = 10
-    # config["evaluation_num_episodes"] = 10
-    # config["evaluation_num_workers"] = 1
-    model_weights = trainer.get_weights()
-    print("got model weight")
-    trainer.stop()
-    print("trainer stopped")
     updated_agent = ray_maml.MAMLTrainer(config=config, env = SocialGameMetaEnv)
     print("started new trainer")
-    updated_agent.set_weights(model_weights)
+    updated_agent.get_policy().set_weights(model_weights)
     print("set new weights")
-    # import pprint; pp = pprint.PrettyPrinter(indent=4); print(pp.pprint(updated_agent.__dict__))
-    # import pdb; pdb.set_trace()
-    to_log = ["episode_reward_mean", "episode_reward_mean_adapt_5", "adaptation_delta"]
+    to_log = ["episode_reward_mean", "episode_reward_mean_adapt_2", "adaptation_delta"]
 
-    for i in range(10):
+    for i in range(1):
         print("step {}".format(i))
         result = updated_agent.train()
         log = {"val_maml_" + name: result[name] for name in to_log}
         if args.wandb:
-            wandb.log({'validation_step': i})
-            wandb.log(log)
+            wandb.log({'validation_step': i}, commit=False)
+            wandb.log(log, commit=False)
             wandb.log({"val_maml_total_loss": result["info"]["learner"]["default_policy"]["total_loss"]})
         else:
             print(log)
-    model_weights2 = updated_agent.get_weights()
+    model_weights2 = updated_agent.get_policy().get_weights()
     np.testing.assert_equal(model_weights2, model_weights, err_msg="Weights were changed during validation")
     if str(model_weights) != str(model_weights2):
         print("Weights were changed")
@@ -257,6 +242,7 @@ def get_agent(env, args, non_vec_env=None):
             config["num_workers"] = args.maml_num_workers
             
             config["inner_adaptation_steps"] = args.maml_inner_adaptation_steps
+            config["maml_optimizer_steps"] = args.maml_optimizer_steps
             config["env"] = SocialGameMetaEnv
             config["env_config"] = vars(args)
             config["env_config"]["mode"] = "train"
@@ -564,6 +550,12 @@ def parse_args():
         default = 1
     )
     parser.add_argument(
+        "--maml_optimizer_steps",
+        help = "Number of meta adaptation steps for MAML",
+        type = int,
+        default=1
+    )
+    parser.add_argument(
         "--maml_inner_lr",
         help = "Learning rate for inner adaptation training",
         type = float,
@@ -585,8 +577,16 @@ def parse_args():
     parser.add_argument(
         "--checkpoint_interval",
         help = "How many training iterations between checkpoints (only implemented for MAML)",
-        type = int
+        type = int,
+        default=100
     )
+    parser.add_argument(
+        "--validate_checkpoint",
+        help= "Path to MAMLTrainer checkpoint to validate from",
+        type=str,
+        default=None
+    )
+    
 
     args = parser.parse_args()
 
@@ -627,27 +627,32 @@ def main():
         )
 
     print("Got vectorized environment, getting agent")
-
     # Create Agent
     model = get_agent(vec_env, args, non_vec_env=None)
     print("Got agent")
+    if args.validate_checkpoint is None:
 
-    # Train algo, (logging through Tensorboard)
-    print("Beginning Testing!")
-    r_real = train(
-        agent = model,
-        num_steps = args.num_steps,
-        tb_log_name=args.exp_name,
-        args = args,
-        library=args.library
-    )
+        # Train algo, (logging through Tensorboard)
+        print("Beginning Testing!")
+        r_real = train(
+            agent = model,
+            num_steps = args.num_steps,
+            tb_log_name=args.exp_name,
+            args = args,
+            library=args.library
+        )
+        weights = model.get_policy().get_weights()
+        print("Training Completed! View TensorBoard logs at " + args.log_path)
+    else:
+        with open(args.validate_checkpoint, "rb") as ckpt_file:
+            weights = pickle.load(ckpt_file)
 
-    print("Training Completed! View TensorBoard logs at " + args.log_path)
 
     # Print evaluation of policy
     print("Beginning Evaluation")
     if args.algo == "maml":
-        maml_eval_fn(model, args)
+        model.stop()
+        maml_eval_fn(weights, args)
     print(
         "If there was no planning model involved, remember that the output will be in the log dir"
     )
