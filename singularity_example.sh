@@ -3,7 +3,7 @@
 #SBATCH --job-name=socialgame_train
 #
 # Account:
-#SBATCH --account=account_name
+#SBATCH --account=fc_ntugame
 #
 # Partition:
 #SBATCH --partition=savio2_gpu
@@ -23,4 +23,4 @@
 # Wall clock limit (8hrs):
 #SBATCH --time=00:08:00
 
-singularity exec library://aphoh/default/pytorch-21.03-py3:v1 sh -c './singularity_preamble.sh && ./example_run.sh'
+singularity exec --nv --no-home --bind $(pwd):/home/tc library://aphoh/default/pytorch-21.03-py3:v1 sh -c './singularity_preamble.sh && ./example_run.sh'
