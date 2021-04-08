@@ -22,6 +22,7 @@ from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMe
 import ray
 import ray.rllib.agents.ppo as ray_ppo
 import ray.rllib.agents.maml as ray_maml
+import ray.rllib.agents.ddpg.td3 as ray_td3
 from ray import tune
 from ray.tune.integration.wandb import (wandb_mixin, WandbLoggerCallback)
 from ray.tune.logger import (DEFAULT_LOGGERS, pretty_print, UnifiedLogger)
@@ -123,6 +124,28 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     wandb.log({"total_loss": result["info"]["learner"]["default_policy"]["total_loss"]})
                 else:
                     print(log)
+        elif args.algo=="td3":
+            # TODO
+            train_batch_size = 256
+            config = ray_td3.TD3_DEFAULT_CONFIG.copy()
+            config["train_batch_size"] = train_batch_size
+            config["num_workers"] = 1
+            config["env"] = SocialGameEnvRLLib
+            config["env_config"] = vars(args)
+
+            logger_creator = utils.custom_logger_creator(args.log_path)
+            updated_agent = ray_td3.TD3Trainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
+            to_log = ["episode_reward_mean"]
+            print("bound", int(np.ceil(num_steps/train_batch_size)))
+            for i in range(int(np.ceil(num_steps/train_batch_size))):
+                print(i)
+                result = updated_agent.train()
+                log = {name: result[name] for name in to_log}
+                if args.wandb:
+                    wandb.log(log)
+                else:
+                    print(log)
+
 
 def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
     """
@@ -150,7 +173,6 @@ def get_agent(env, args, non_vec_env=None):
 
     Exceptions: Raises exception if args.algo unknown (not needed b/c we filter in the parser, but I added it for modularity)
     """
-
     if args.library=="sb3":
         if args.algo == "sac":
             return SAC(
@@ -180,6 +202,9 @@ def get_agent(env, args, non_vec_env=None):
             trainer = ray_maml.MAMLTrainer
             return trainer
 
+        elif args.algo == "td3":
+            trainer = ray_td3.TD3Trainer
+            return trainer
     else:
         raise NotImplementedError("Algorithm {} not supported. :( ".format(args.algo))
 
@@ -316,7 +341,7 @@ def parse_args():
         help="RL Algorithm",
         type=str,
         default="sac",
-        choices=["sac", "ppo", "maml"]
+        choices=["sac", "ppo", "maml", "td3"]
     )
     parser.add_argument(
         "--base_log_dir",

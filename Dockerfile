@@ -2,7 +2,7 @@ FROM "nvcr.io/nvidia/pytorch:20.11-py3"
 
 # You should really specify these unless running the run.sh script
 ARG UNAME=tc
-ARG UID=1000
+ARG UID=501
 ARG GID=1000
 
 RUN python -m pip install --upgrade pip
@@ -18,5 +18,8 @@ COPY ./gym-socialgame/ ./gym-socialgame/
 RUN pip install -e ./gym-socialgame/ 
 
 ENV TUNE_RESULT_DIR=/home/$UNAME/logs
+
+RUN chmod -R 755 /home/$UNAME
+# RUN chown -R $UID:$UID /home/
 
 USER $UNAME
