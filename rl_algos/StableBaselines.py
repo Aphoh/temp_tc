@@ -28,6 +28,11 @@ from ray.tune.logger import (DEFAULT_LOGGERS, pretty_print, UnifiedLogger)
 from ray.tune.integration.wandb import WandbLogger
 import pickle
 
+from ray.rllib.agents.maml.maml_tf_policy import MAMLTFPolicy
+from ray.rllib.agents.maml.maml_torch_policy import MAMLTorchPolicy
+
+from ray.rllib.agents.trainer_template import build_trainer
+
 from pprint import pprint
 import pdb
 
@@ -45,7 +50,6 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
     elif library=="tune":
 
-        #ray.init()
 
         if args.algo=="ppo":
             config = ray_ppo.DEFAULT_CONFIG.copy()
@@ -78,24 +82,9 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
     elif library=="rllib":
 
-        ray.init(local_mode=True)
 
         if args.algo=="ppo":
-            train_batch_size = 256
-            config = ray_ppo.DEFAULT_CONFIG.copy()
-            config["framework"] = "torch"
-            config["train_batch_size"] = train_batch_size
-            config["sgd_minibatch_size"] = 16
-            config["lr"] = 0.0002
-            config["clip_param"] = 0.3
-            config["num_gpus"] = 0.2
-            config["num_workers"] = 1
-            config["env"] = SocialGameEnvRLLib
-            config["callbacks"] = CustomCallbacks
-            config["env_config"] = vars(args)
-            logger_creator = utils.custom_logger_creator(args.log_path)
-
-            updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
+            
             to_log = ["episode_reward_mean"]
             for i in range(int(np.ceil(num_steps/train_batch_size))):
                 result = agent.train()
@@ -143,23 +132,32 @@ def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=Fals
     print("Mean Reward: {:.3f}".format(mean_reward))
     print("Std Reward: {:.3f}".format(std_reward))
 
+def on_inner_episode_step_creator():
+    num_steps = 0
+    def on_inner_episode_step(info):
+        nonlocal num_steps
+        episode = info["episode"]
+        num_steps += 1
+        info["episode"]
+    return on_inner_episode_step
 
 
 def maml_eval_fn(model_weights, args):
     """
     Purpose: Evaluate a model on 100 steps in MAML random test environments over the social game metaenvironment
     Args:
-        trainer: MAMLTrainer from RLLib
+        model_weights: Weights from MAMLTrainer from RLLib
         args: command line arguments
 
     """
+    
     config = ray_maml.DEFAULT_CONFIG.copy()
     config["framework"] = "tf1"
     config["num_gpus"] = 1
     config["num_envs_per_worker"] = 2
     config["num_workers"] = args.maml_num_workers
     
-    config["inner_adaptation_steps"] = 2
+    config["inner_adaptation_steps"] = 100
     config["env"] = SocialGameMetaEnv
     config["env_config"] = vars(args)
     config["env_config"]["mode"] = "test"
@@ -168,21 +166,34 @@ def maml_eval_fn(model_weights, args):
     config["inner_lr"] = args.maml_inner_lr
     config["lr"] = 0 # make lr 0 so no outer adaptation occurs for validation
     config["vf_clip_param"] = args.maml_vf_clip_param
-    config["maml_optimizer_steps"] = 1
-    updated_agent = ray_maml.MAMLTrainer(config=config, env = SocialGameMetaEnv)
+    config["maml_optimizer_steps"] = 0
+    inner_callback_fn = on_inner_episode_step_creator()
+    config["callbacks"] = {"on_episode_step": inner_callback_fn}
+    #Build a custom MAML trainer that does not error when maml_optimizer_steps=0
+    from ray.rllib.agents.maml.maml import get_policy_class
+    from maml_copy import execution_plan
+    evalMAMLTrainer = build_trainer(
+                                    name="MAML",
+                                    default_config=ray_maml.DEFAULT_CONFIG,
+                                    default_policy=MAMLTFPolicy,
+                                    get_policy_class=get_policy_class,
+                                    execution_plan=execution_plan,
+                                    validate_config=lambda x: x)
+    updated_agent = evalMAMLTrainer(config=config, env = SocialGameMetaEnv)
     print("started new trainer")
     updated_agent.get_policy().set_weights(model_weights)
     print("set new weights")
     to_log = ["episode_reward_mean", "episode_reward_mean_adapt_2", "adaptation_delta"]
-
+    
     for i in range(1):
         print("step {}".format(i))
         result = updated_agent.train()
+        
         log = {"val_maml_" + name: result[name] for name in to_log}
         if args.wandb:
-            wandb.log({'validation_step': i}, commit=False)
             wandb.log(log, commit=False)
-            wandb.log({"val_maml_total_loss": result["info"]["learner"]["default_policy"]["total_loss"]})
+            for j in range(1, config["inner_adaptation_steps"]+1):
+                wandb.log({"validation inner_reward_mean": result["episode_reward_mean_adapt_{}".format(j)]}, commit=True)
         else:
             print(log)
     model_weights2 = updated_agent.get_policy().get_weights()
@@ -223,15 +234,21 @@ def get_agent(env, args, non_vec_env=None):
     elif args.library=="rllib" or args.library=="tune":
 
         if args.algo == "ppo":
-            train_batch_size = 4000
+            train_batch_size = 256
             config = ray_ppo.DEFAULT_CONFIG.copy()
             config["framework"] = "torch"
             config["train_batch_size"] = train_batch_size
-            config["num_gpus"] = 0
+            config["sgd_minibatch_size"] = 16
+            config["lr"] = 0.0002
+            config["clip_param"] = 0.3
+            config["num_gpus"] = 0.2
             config["num_workers"] = 1
             config["env"] = SocialGameEnvRLLib
+            config["callbacks"] = CustomCallbacks
             config["env_config"] = vars(args)
-            trainer = ray_ppo.PPOTrainer(config=config, env= SocialGameEnvRLLib)
+            logger_creator = utils.custom_logger_creator(args.log_path)
+
+            trainer = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
             return trainer
 
         elif args.algo == "maml":
