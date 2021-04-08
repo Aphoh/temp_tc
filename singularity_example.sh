@@ -23,4 +23,4 @@
 # Wall clock limit (8hrs):
 #SBATCH --time=00:08:00
 
-singularity exec --nv --contain --workdir ./tmp --bind $(pwd):$HOME library://aphoh/default/pytorch-20.11-py3:v-1 sh -c './singularity_preamble.sh && ./example_run.sh'
+singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME library://aphoh/default/sg-k80-env:v1 sh -c './singularity_preamble.sh && ./example_run.sh'
