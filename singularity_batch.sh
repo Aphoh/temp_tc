@@ -21,6 +21,17 @@
 #SBATCH --gres=gpu:1
 #
 # Wall clock limit (8hrs):
-#SBATCH --time=00:08:00
+#SBATCH --time=08:00:00
+#
+# Run 8 examples concurrently
+#SBATCH --array=0-7
 
-singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME library://aphoh/default/sg-k80-env:v1 sh -c './singularity_preamble.sh && ./example_run.sh'
+VALS=(3.00 0.50 0.10 0.05 0.03 0.003 0.001 0)
+SMIRL_VAL=${VALS[$SLURM_ARRAY_TASK_ID]}
+
+LDIR=/global/scratch/$USER/.local$SLURM_ARRAY_TASK_ID
+rm -rf $LDIR
+mkdir -p $LDIR
+
+singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME --bind "$LDIR:$HOME/.local" --env SMIRL_VAL=$SMIRL_VAL library://aphoh/default/sg-k80-env:v1 \
+  sh -c './singularity_preamble.sh && ./batch_elt_run.sh $SMIRL_VAL'
