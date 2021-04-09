@@ -33,6 +33,8 @@ def analyze_run(run_name):
     means = np.mean(reward_vals, axis = 0)
     stes = np.std(reward_vals, axis = 0) / np.sqrt(num_runs)
     return means, stes
+# Specify which runs to visualize:
+# Each dict describes the title of the graph, label of each run, and which wandb runs to plot
 runs = {
     "Adaptation to Threshold Response": {
         "MAML+PPO": "social-game-rl/energy-demand-response-game/gjg5p7lo",
