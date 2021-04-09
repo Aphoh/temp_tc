@@ -79,6 +79,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
         ray.init(local_mode=True)
 
         if args.algo=="ppo":
+            CustomCallbacks.out_name = args.exp_name + ".csv"
             train_batch_size = 256
             config = ray_ppo.DEFAULT_CONFIG.copy()
             config["framework"] = "torch"
@@ -102,6 +103,8 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     wandb.log(log)
                 else:
                     print(log)
+
+            wandb.save(CustomCallbacks.out_name)
 
         elif args.algo=="maml":
             config = ray_maml.DEFAULT_CONFIG.copy()
