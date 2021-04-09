@@ -525,27 +525,27 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
         if self.mode == "train":
             print("SAMPLING TRAIN ENVIRONMENT")
             person_type = np.random.choice([DeterministicFunctionPerson], size = (n_tasks, ))
-            points_multiplier = np.random.choice(range(20), size = (n_tasks, ))
-            response = np.random.choice(['t','l', 's'], size = (n_tasks, ))
+            points_multiplier = np.random.choice(range(10, 20), size = (n_tasks, ))
+            response = np.random.choice(['t', 's', 'l'], size = (n_tasks, ))
             shiftable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
             curtailable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
             shiftByHours = np.random.choice(range(8), (n_tasks, ))
             maxCurtailHours=np.random.choice(range(8), (n_tasks, ))
         elif self.mode == "test":
             print("SAMPLING TEST ENVIRONMENT")
-            person_type = np.random.choice([CurtailAndShiftPerson], size = (n_tasks, ))
-            points_multiplier = np.random.choice(range(20), size = (n_tasks, ))
-            response = np.random.choice(['t','l', 's'], size = (n_tasks, ))
-            shiftable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
-            curtailable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
-            shiftByHours = np.random.choice(range(8), (n_tasks, ))
-            maxCurtailHours=np.random.choice(range(8), (n_tasks, ))
+            person_type = [CurtailAndShiftPerson for i in range(n_tasks)]
+            points_multiplier = [10 for i in range(n_tasks)]
+            response = ['t' for i in range(n_tasks)]
+            shiftable_load_frac = [0.2 for i in range(n_tasks)]
+            curtailable_load_frac = [0.2 for i in range(n_tasks)]
+            shiftByHours = [2 for i in range(n_tasks)]
+            maxCurtailHours=[5 for i in range(n_tasks)]
         else:
             raise Exception("Please specify whether this is a training or evaluation run")
         task_parameters = {
             "person_type":person_type,
             "points_multiplier":points_multiplier,
-            "response":response,
+            "response_type_string":response,
             "shiftable_load_frac":shiftable_load_frac,
             "curtailable_load_frac":curtailable_load_frac,
             "shiftByHours":shiftByHours,

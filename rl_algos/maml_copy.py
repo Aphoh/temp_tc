@@ -100,7 +100,7 @@ def execution_plan(workers, config):
         split = []
         metrics = {}
         for samples in itr:
-
+            print("Restarting inner adaptation loop")
             # Processing Samples (Standardize Advantages)
             split_lst = []
             for sample in samples:
@@ -111,8 +111,10 @@ def execution_plan(workers, config):
             split.append(split_lst)
 
             adapt_iter = len(split) - 1
+            print("starting to postprocess metrics")
             metrics = post_process_metrics(adapt_iter, workers, metrics)
             if len(split) > inner_steps:
+                print("len split is larger than size of inner steps")
                 out = SampleBatch.concat_samples(buf)
                 out["split"] = np.array(split)
                 buf = []
@@ -126,6 +128,7 @@ def execution_plan(workers, config):
                 yield out, metrics
                 metrics = {}
             else:
+                print("Doing an inner adaptation step")
                 inner_adaptation(workers, samples)
 
     rollouts = from_actors(workers.remote_workers())
