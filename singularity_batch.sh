@@ -30,4 +30,4 @@ VALS=(3.00 0.50 0.10 0.05 0.03 0.003 0.001 0)
 SMIRL_VAL=${VALS[$SLURM_ARRAY_TASK_ID]}
 
 singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME library://aphoh/default/sg-k80-env:v1 \
-  sh -c './singularity_preamble.sh && ./smirl_run.sh $SMIRL_VAL'
+  sh -c './singularity_preamble.sh && ./batch_elt_run.sh $SMIRL_VAL'
