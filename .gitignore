@@ -242,3 +242,9 @@ wandb/
 
 ray_results/
 .viminfo
+
+# Ignore SLURM Outputs
+slurm-*.out
+
+# Ignore run scripts
+*_run.sh
