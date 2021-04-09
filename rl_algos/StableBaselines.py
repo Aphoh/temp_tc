@@ -178,7 +178,7 @@ def maml_eval_fn(model_weights, args):
     to_log = ["episode_reward_mean", "episode_reward_mean_adapt_2", "adaptation_delta"]
     validation_reward = [0 for j in range(0, config["inner_adaptation_steps"])]
     
-    for i in range(args.num_steps):
+    for i in range(args.val_num_trials):
         print("step {}".format(i))
         result = updated_agent.train()
         log = {"val_maml_" + name: result[name] for name in to_log}
@@ -607,6 +607,12 @@ def parse_args():
         help = "Whether to evaluate the PPO baseline for the MAML tasks",
         action="store_true",
         default=False
+    )
+    parser.add_argument(
+        "--val_num_trials",
+        help = "Number of trials to run validation for",
+        type=int,
+        default=None
     )
     
 

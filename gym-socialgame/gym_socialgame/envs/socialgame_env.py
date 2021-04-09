@@ -73,6 +73,7 @@ class SocialGameEnv(gym.Env):
         self.hours_in_day = 10
         self.last_smirl_reward = None
         self.last_energy_reward = None
+        print("response type string: ", self.response_type_string)
 
         self.day = 0
         self.days_of_week = [0, 1, 2, 3, 4]

@@ -8,10 +8,10 @@ def analyze_run(run_name):
     run = api.run(run_name)
     hist = run.history()
     reward_prefix = "validation_inner_reward_"
-    num_runs = 50
+    num_runs = 5
     first_indices = []
     trial_names = []
-    for i in range(50):
+    for i in range(num_runs):
         trial_name = reward_prefix + str(i)
         if not (trial_name in hist):
             num_runs = i
@@ -33,12 +33,33 @@ def analyze_run(run_name):
     means = np.mean(reward_vals, axis = 0)
     stes = np.std(reward_vals, axis = 0) / np.sqrt(num_runs)
     return means, stes
-ppo_run = "social-game-rl/energy-demand-response-game/3skaelp1"
-maml_run = "social-game-rl/energy-demand-response-game/gjg5p7lo"
-ppo_means, ppo_stds = analyze_run(ppo_run)
-maml_means, maml_stds = analyze_run(maml_run)
-x = list(range(len(ppo_means)))
-plt.errorbar(x, ppo_means, yerr = ppo_stds, label = "PPO")
-plt.errorbar(x, maml_means, yerr = maml_stds, label = "MAML + PPO")
-plt.legend()
-plt.savefig("maml_summary_analysis_deterministicfn.png")
+runs = {
+    "Adaptation to Threshold Response": {
+        "MAML+PPO": "social-game-rl/energy-demand-response-game/gjg5p7lo",
+        "PPO": "social-game-rl/energy-demand-response-game/3skaelp1"
+        
+    },
+    "Adaptation to Curtail and Shift Response": {
+        "MAML+PPO": "social-game-rl/energy-demand-response-game/2g90nma7",
+        "PPO": "social-game-rl/energy-demand-response-game/14x4i8so"
+    },
+    "MAML+PPO Response to Number of Simulation Training Iterations": {
+        "50 iterations": "social-game-rl/energy-demand-response-game/24nd2dj1",
+        "100 iterations": "social-game-rl/energy-demand-response-game/2g90nma7",
+        "150 iterations": "social-game-rl/energy-demand-response-game/3tc4ni7u",
+        "200 iterations": "social-game-rl/energy-demand-response-game/2ev8r466"
+    }
+}
+fig, axs = plt.subplots(len(runs.keys()), sharex=True, figsize=(20, 20))
+for i, (name, wandb_ids) in enumerate(runs.items()):
+    for algo, id in wandb_ids.items():
+        means, stes = analyze_run(id)
+        x = list(range(len(means)))
+        axs[i].errorbar(x, means, yerr = stes, label=algo)
+    axs[i].set_title(name)
+    plt.ylabel("Average Reward")
+plt.xlabel("Gradient Update Steps")
+axs[0].legend()
+axs[-1].legend()
+fig.tight_layout()
+plt.savefig("maml_summary_analysis_grid.png")
