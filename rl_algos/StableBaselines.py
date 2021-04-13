@@ -19,6 +19,9 @@ from stable_baselines3.common.env_checker import check_env
 import gym_socialgame.envs.utils as env_utils
 from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv)
 
+import gym_microgrid.envs.utils as env_utils
+from gym_microgrid.envs.microgrid_env import MicrogridEnv
+
 import ray
 import ray.rllib.agents.ppo as ray_ppo
 import ray.rllib.agents.maml as ray_maml
