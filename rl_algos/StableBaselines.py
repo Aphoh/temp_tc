@@ -95,8 +95,10 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
             updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
             to_log = ["episode_reward_mean"]
-            for i in range(int(np.ceil(num_steps/train_batch_size))):
+            timesteps_total = 0
+            while timesteps_total < num_steps:
                 result = updated_agent.train()
+                timesteps_total = result["timesteps_total"]
                 log = {name: result[name] for name in to_log}
                 if args.wandb:
                     wandb.log(log)
