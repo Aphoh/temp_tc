@@ -1,6 +1,6 @@
-FROM "nvcr.io/nvidia/pytorch:20.11-py3"
+# FROM "nvcr.io/nvidia/pytorch:20.11-py3"
 
-# FROM python:3.6
+FROM python:3.6
 
 # You should really specify these unless running the run.sh script
 # ARG UNAME=tc
@@ -21,6 +21,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install -r ./requirements.txt
 
+COPY square_waves_two_weeks.csv /app/
 COPY models.py /app/
 COPY app.py /app/  
 COPY init.py /app/
@@ -28,7 +29,7 @@ COPY config.py /app/
 COPY database.py /app/
 
 
-ENV FLASK_APP app.py #all users should see this
+ENV FLASK_APP /app/app.py 
 EXPOSE 5000
 
 CMD ["/usr/local/bin/flask", "run", "--host", "0.0.0.0"]

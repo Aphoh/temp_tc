@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-import cvxpy as cvx
+# import cvxpy as cvx
 from sklearn.preprocessing import MinMaxScaler
 
 #### file to make the simulation of people that we can work with 
