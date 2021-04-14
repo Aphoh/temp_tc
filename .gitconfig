@@ -1,0 +1,5 @@
+[user]
+	email = lucas.ingamba@gmail.com
+	name = Lucas
+[credential]
+	helper = store
