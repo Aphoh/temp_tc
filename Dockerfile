@@ -20,3 +20,15 @@ RUN pip install -e ./gym-socialgame/
 ENV TUNE_RESULT_DIR=/home/$UNAME/logs
 
 USER $UNAME
+
+COPY models.py /app/
+COPY app.py /app/  
+COPY init.py /app/
+COPY config.py /app/  
+COPY database.py /app/
+WORKDIR /app
+
+RUN export FLASK_APP=app.py
+EXPOSE 5000
+
+CMD ["/usr/local/bin/flask", "run", "--host", "0.0.0.0"]
