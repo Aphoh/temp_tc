@@ -106,33 +106,8 @@ class MicrogridEnv(gym.Env):
         #TODO: Check initialization of prev_energy
         self.prev_energy = np.zeros(self.day_length)
 
-        if not self.two_price_state:
-            self.logger_df = pd.DataFrame(
-                columns = np.concatenate(
-                (   
-                    ["iteration"],
-                    ["reward"],
-                    ["t_price" + str(i) for i in range(24)],
-                    ["b_price" + str(i) for i in range(24)],
-                    ["s_price" + str(i) for i in range(24)],
-                    ["e" + str(i) for i in range(24)],
-                    )
-                )
-            )
-        else:
-            self.logger_df = pd.DataFrame(
-                columns = np.concatenate(
-                (   
-                    ["iteration"],
-                    ["reward"],
-                    ["t_buyprice" + str(i) for i in range(24)],
-                    ["t_sellprice" + str(i) for i in range(24)],
-                    ["b_price" + str(i) for i in range(24)],
-                    ["s_price" + str(i) for i in range(24)],
-                    ["e" + str(i) for i in range(24)],
-                    )
-                )
-            )
+        if self.use_smirl:
+            self.buffer = GaussianBuffer(self.action_length)
 
         self.iteration = 0
 
@@ -416,13 +391,23 @@ class MicrogridEnv(gym.Env):
         money_to_utility = np.dot(np.maximum(0, total_consumption), buyprice_grid) + np.dot(np.minimum(0, total_consumption), sellprice_grid)
         money_from_prosumers = np.dot(total_consumption, transactive_price)
 
-        total_reward = None
-        if self.reward_function == "market_solving":
-            total_reward = - abs(money_from_prosumers - money_to_utility)
-        elif self.reward_function =="profit_maximizing":
-            total_reward = money_from_prosumers - money_to_utility
+        total_energy_reward = 0
+        total_smirl_reward = 0
 
-        return total_reward
+        if self.reward_function == "market_solving":
+            total_energy_reward = - abs(money_from_prosumers - money_to_utility)
+        elif self.reward_function =="profit_maximizing":
+            total_energy_reward = money_from_prosumers - money_to_utility
+
+        
+        if self.use_smirl:
+            smirl_rew = self.buffer.logprob(self._get_observation())
+            total_smirl_reward = self.smirl_weight * np.clip(smirl_rew, -300, 300)
+
+        self.last_smirl_reward = total_smirl_reward
+        self.last_energy_reward = total_energy_reward
+
+        return total_energy_reward + total_smirl_reward
 
     def _get_reward_twoprices(self, buyprice_grid, sellprice_grid, transactive_buyprice, transactive_sellprice, energy_consumptions):
         """
@@ -525,6 +510,8 @@ class MicrogridEnv(gym.Env):
             
             self.iteration += 1
 
+        if self.use_smirl:
+            self.buffer.add(observation)
 
         info = {}
         return observation, reward, done, info
