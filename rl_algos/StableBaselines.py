@@ -469,7 +469,7 @@ def parse_args():
         help="reward function to test",
         type=str,
         default="log_cost_regularized",
-        choices=["scaled_cost_distance", "log_cost_regularized", "log_cost", "scd", "lcr", "lc"],
+        choices=["scaled_cost_distance", "log_cost_regularized", "log_cost", "scd", "lcr", "lc", "market_solving", "profit_maximizing"],
     )
     parser.add_argument(
         "--learning_rate",

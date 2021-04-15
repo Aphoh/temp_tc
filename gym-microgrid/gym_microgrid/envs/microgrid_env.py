@@ -21,7 +21,7 @@ class MicrogridEnv(gym.Env):
         energy_in_state = False,
         day_of_week = False,
         pricing_type="TOU",
-        reward_function = "scaled_cost_distance",
+        reward_function = "market_solving",
         manual_tou_magnitude=None,
         complex_batt_pv_scenario=1,
         exp_name = None,
