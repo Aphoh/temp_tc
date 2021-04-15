@@ -473,6 +473,18 @@ def parse_args():
         type = float,
         default=None,
     )
+    parser.add_argument(
+        "--circ_buffer_size",
+        help="Size of circular smirl buffer to use. Will use an unlimited size buffer in None",
+        type = float,
+        default=None,
+    )
+    parser.add_argument(
+        "--bulk_log_interval",
+        help="Interval at which to save bulk log information",
+        type=int,
+        default=10000
+    )
 
     args = parser.parse_args()
 
