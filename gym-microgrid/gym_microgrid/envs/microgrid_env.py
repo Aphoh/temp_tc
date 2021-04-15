@@ -503,27 +503,6 @@ class MicrogridEnv(gym.Env):
             sellprice_grid = self.sellprices_grid[self.day]
             reward = self._get_reward(buyprice_grid, sellprice_grid, price, energy_consumptions)
 
-
-            info = {}
-
-            # data frame logger. Delete soon 
-
-            if not self.iteration % 100:
-                print("Iteration: " + str(self.iteration) + " reward: " + str(reward))
-
-            if ((not self.iteration % 50) or self.iteration>15000):
-
-                self.logger_df.loc[self.iteration] = np.concatenate(
-                    (   
-                        [self.iteration],
-                        [reward],
-                        price,
-                        buyprice_grid,
-                        sellprice_grid,
-                        self.prev_energy,
-                        ))
-                self.logger_df.to_csv("logs/" + str(self.exp_name) + "/" +str(self.exp_name) + ".csv")
-            
             self.iteration += 1
 
         else: 
@@ -543,29 +522,11 @@ class MicrogridEnv(gym.Env):
             buyprice_grid = self.buyprices_grid[self.day]
             sellprice_grid = self.sellprices_grid[self.day]
             reward = self._get_reward_twoprices(buyprice_grid, sellprice_grid, buyprice, sellprice, energy_consumptions)
-            info = {}
-
-            # data frame logger. Delete soon 
-
-            if not self.iteration % 50:
-                print("Iteration: " + str(self.iteration) + " reward: " + str(reward))
-
-            if ((self.iteration % 50 == 25) or self.iteration>15000):
-
-                self.logger_df.loc[self.iteration] = np.concatenate(
-                    (   
-                        [self.iteration],
-                        [reward],
-                        buyprice,
-                        sellprice,
-                        buyprice_grid,
-                        sellprice_grid,
-                        self.prev_energy,
-                        ))
-                self.logger_df.to_csv("logs/" + str(self.exp_name) + "/" +str(self.exp_name) + ".csv")
             
             self.iteration += 1
 
+
+        info = {}
         return observation, reward, done, info
 
     def _get_observation(self):
