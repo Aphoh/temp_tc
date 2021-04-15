@@ -20,7 +20,7 @@ import gym_socialgame.envs.utils as env_utils
 from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv)
 
 import gym_microgrid.envs.utils as env_utils
-from gym_microgrid.envs.microgrid_env import MicrogridEnv
+from gym_microgrid.envs.microgrid_env import MicrogridEnvRLLib
 
 import ray
 import ray.rllib.agents.ppo as ray_ppo
@@ -91,12 +91,18 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["clip_param"] = 0.3
             config["num_gpus"] =  1
             config["num_workers"] = 1
-            config["env"] = SocialGameEnvRLLib
+
+            # config["env"] = SocialGameEnvRLLib
+            config["env"] = MicrogridEnvRLLib
+
             config["callbacks"] = CustomCallbacks
             config["env_config"] = vars(args)
             logger_creator = utils.custom_logger_creator(args.log_path)
 
-            updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
+            # updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
+            updated_agent = ray_ppo.PPOTrainer(config=config, env=MicrogridEnvRLLib, logger_creator=logger_creator)
+
+
             to_log = ["episode_reward_mean"]
             for i in range(int(np.ceil(num_steps/train_batch_size))):
                 result = updated_agent.train()
@@ -242,26 +248,43 @@ def get_environment(args):
     else:
         reward_function = args.reward_function
 
-    socialgame_env = gym.make(
-        "gym_socialgame:socialgame{}".format(env_id),
+    # socialgame_env = gym.make(
+    #     "gym_socialgame:socialgame{}".format(env_id),
+    #     action_space_string=action_space_string,
+    #     response_type_string=args.response_type_string,
+    #     one_day=args.one_day,
+    #     number_of_participants=args.number_of_participants,
+    #     price_in_state = args.price_in_state,
+    #     energy_in_state=args.energy_in_state,
+    #     pricing_type=args.pricing_type,
+    #     reward_function=reward_function,
+    #     bin_observation_space = args.bin_observation_space,
+    #     manual_tou_magnitude=args.manual_tou_magnitude,
+    #     smirl_weight=args.smirl_weight
+    # )
+
+
+    microgrid_env = gym.make(
+        "gym_microgrid:microgrid{}".format(env_id),
         action_space_string=action_space_string,
         response_type_string=args.response_type_string,
         one_day=args.one_day,
         number_of_participants=args.number_of_participants,
-        price_in_state = args.price_in_state,
         energy_in_state=args.energy_in_state,
         pricing_type=args.pricing_type,
         reward_function=reward_function,
-        bin_observation_space = args.bin_observation_space,
         manual_tou_magnitude=args.manual_tou_magnitude,
-        smirl_weight=args.smirl_weight
+        smirl_weight=args.smirl_weight # NOTE: Complex Batt PV and two price state default values used
     )
 
 
     # Check to make sure any new changes to environment follow OpenAI Gym API
-    check_env(socialgame_env)
 
-    return socialgame_env
+    # check_env(socialgame_env)
+    check_env(microgrid_env)
+
+    # return socialgame_env
+    return microgrid_env
 
 def vectorize_environment(env, args, include_non_vec_env=False):
 
@@ -315,7 +338,7 @@ def parse_args():
         default="v0",
     )
     parser.add_argument(
-        "--gym-env", 
+        "--gym_env", 
         help="Which Gym Environment you wihs to use",
         type=str,
         choices=["socialgame", "microgrid"],
