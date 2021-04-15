@@ -5,28 +5,10 @@ import numpy as np
 import pandas as pd 
 import random
 
-import tensorflow as tf
-
 from gym_microgrid.envs.utils import price_signal
 from gym_microgrid.envs.agents import *
 from gym_microgrid.envs.reward import Reward
-
-import pickle
-import IPython
-
-
-## TODO: print plotter reactions
-##       try where profit is maximized
-##       inefficiencies in the grid -- 
-##          optimal price will result in more energy saved due to avoiding transmission losses 
-
-##       run scenarios 1, 2, 3
-##       change reward to be profit maximizing
-##       
-
-##
-## prepare to run on savio? 
-## 
+from gym_socialgame.envs.buffers import GaussianBuffer
 
 class MicrogridEnv(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -257,7 +239,6 @@ class MicrogridEnv(gym.Env):
             raise AssertionError
 
         # Get energy from building_data.csv file,  each office building has readings in kWh. Interpolate to fill missing values
-        # df = pd.read_csv('/Users/utkarshapets/Documents/Research/Optimisation attempts/building_data.csv').interpolate()
         df = pd.read_csv('../building_data.csv').interpolate().fillna(0)
         building_names = df.columns[5:] # Skip first few columns 
         for i in range(len(building_names)):
@@ -662,7 +643,12 @@ class MicrogridEnv(gym.Env):
 
         print("all inputs valid")
 
-class MicrogridEnvRLLib(SocialGameEnv):
+class MicrogridEnvRLLib(MicrogridEnv):
+    """ 
+    Child Class of MicrogridEnv to support RLLib. 
+    two_price_state and complex_batt_pv are specific params for the MicrogridEnv
+    and differs from SocialGame. 
+    """
     def __init__(self, env_config):
         super().__init__(
             action_space_string = env_config["action_space_string"], 
@@ -672,25 +658,9 @@ class MicrogridEnvRLLib(SocialGameEnv):
             energy_in_state = env_config["energy_in_state"],
             pricing_type=env_config["pricing_type"],
             reward_function = env_config["reward_function"],
-
-            
-        )
-
-
-
-class SocialGameEnvRLLib(SocialGameEnv):
-    def __init__(self, env_config):
-        super().__init__(
-            action_space_string = env_config["action_space_string"],
-            response_type_string = env_config["response_type_string"],
-            number_of_participants = env_config["number_of_participants"],
-            one_day = env_config["one_day"],
-            price_in_state= env_config["price_in_state"],
-            energy_in_state = env_config["energy_in_state"],
-            pricing_type=env_config["pricing_type"],
-            reward_function = env_config["reward_function"],
-            bin_observation_space=env_config["bin_observation_space"],
             manual_tou_magnitude=env_config["manual_tou_magnitude"],
-            smirl_weight=env_config["smirl_weight"]
+            smirl_weight=env_config["smirl_weight"], 
+            complex_batt_pv_scenario=1, 
+            two_price_state = False,
         )
-        print("Initialized RLLib child class")
+        print("Initialized RLLib child class for MicrogridEnv.")
