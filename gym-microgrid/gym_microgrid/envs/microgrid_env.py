@@ -26,6 +26,7 @@ class MicrogridEnv(gym.Env):
         complex_batt_pv_scenario=1,
         exp_name = None,
         two_price_state = False,
+        smirl_weight=None
         ):
 
         """
