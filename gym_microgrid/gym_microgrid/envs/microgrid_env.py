@@ -7,7 +7,7 @@ import random
 
 import tensorflow as tf
 
-from gym_microgrid.envs.utils import price_signal, fourier_points_from_action
+from gym_microgrid.envs.utils import price_signal
 from gym_microgrid.envs.agents import *
 from gym_microgrid.envs.reward import Reward
 
@@ -40,7 +40,6 @@ class MicrogridEnv(gym.Env):
         day_of_week = False,
         pricing_type="TOU",
         reward_function = "scaled_cost_distance",
-        fourier_basis_size=4,
         manual_tou_magnitude=None,
         complex_batt_pv_scenario=1,
         exp_name = None,
@@ -54,7 +53,7 @@ class MicrogridEnv(gym.Env):
             Then, environment advances one-day and agent is told that the episode has finished.)
 
         Args:
-            action_space_string: (String) either "continuous", "multidiscrete", or "fourier"
+            action_space_string: (String) either "continuous" or "multidiscrete"
             response_type_string: (String) either "t", "s", "l" , denoting whether the office's response function is threshold, sinusoidal, or linear
             number_of_participants: (Int) denoting the number of players in the social game (must be > 0 and < 20)
             one_day: (Int) in range [-1,365] denoting which fixed day to train on .
@@ -73,7 +72,6 @@ class MicrogridEnv(gym.Env):
             number_of_participants,
             one_day,
             energy_in_state,
-            fourier_basis_size
         )
 
         #Assigning Instance Variables
@@ -84,7 +82,6 @@ class MicrogridEnv(gym.Env):
         self.energy_in_state = energy_in_state
         self.two_price_state = two_price_state
         self.reward_function = reward_function
-        self.fourier_basis_size = fourier_basis_size
         self.manual_tou_magnitude = manual_tou_magnitude
         self.complex_batt_pv_scenario = complex_batt_pv_scenario
         self.exp_name=exp_name
@@ -620,7 +617,7 @@ class MicrogridEnv(gym.Env):
 
 
     def check_valid_init_inputs(self, action_space_string: str, response_type_string: str, number_of_participants = 10,
-                one_day = False, energy_in_state = False, fourier_basis_size = 4):
+                one_day = False, energy_in_state = False):
 
         """
         Purpose: Verify that all initialization variables are valid
@@ -643,7 +640,7 @@ class MicrogridEnv(gym.Env):
         #Checking that action_space_string is valid
         assert isinstance(action_space_string, str), "action_space_str is not of type String. Instead got type {}".format(type(action_space_string))
         action_space_string = action_space_string.lower()
-        assert action_space_string in ["continuous", "multidiscrete", "fourier", "continuous_normalized"], "action_space_str is not continuous or discrete. Instead got value {}".format(action_space_string)
+        assert action_space_string in ["continuous", "multidiscrete", "continuous_normalized"], "action_space_str is not continuous or discrete. Instead got value {}".format(action_space_string)
 
         #Checking that response_type_string is valid
         assert isinstance(response_type_string, str), "Variable response_type_string should be of type String. Instead got type {}".format(type(response_type_string))
@@ -665,11 +662,35 @@ class MicrogridEnv(gym.Env):
 
         print("all inputs valid")
 
-        assert isinstance(
-            fourier_basis_size, int
-        ), "Variable fourier_basis_size is not of type int. Instead got type {}".format(
-            type(fourier_basis_size)
+class MicrogridEnvRLLib(SocialGameEnv):
+    def __init__(self, env_config):
+        super().__init__(
+            action_space_string = env_config["action_space_string"], 
+            response_type_string = env_config["response_type_string"],
+            number_of_participants = env_config["number_of_participants"],
+            one_day = env_config["one_day"],
+            energy_in_state = env_config["energy_in_state"],
+            pricing_type=env_config["pricing_type"],
+            reward_function = env_config["reward_function"],
+
+            
         )
-        assert fourier_basis_size > 0, "Variable fourier_basis_size must be positive. Got {}".format(fourier_basis_size)
 
 
+
+class SocialGameEnvRLLib(SocialGameEnv):
+    def __init__(self, env_config):
+        super().__init__(
+            action_space_string = env_config["action_space_string"],
+            response_type_string = env_config["response_type_string"],
+            number_of_participants = env_config["number_of_participants"],
+            one_day = env_config["one_day"],
+            price_in_state= env_config["price_in_state"],
+            energy_in_state = env_config["energy_in_state"],
+            pricing_type=env_config["pricing_type"],
+            reward_function = env_config["reward_function"],
+            bin_observation_space=env_config["bin_observation_space"],
+            manual_tou_magnitude=env_config["manual_tou_magnitude"],
+            smirl_weight=env_config["smirl_weight"]
+        )
+        print("Initialized RLLib child class")
