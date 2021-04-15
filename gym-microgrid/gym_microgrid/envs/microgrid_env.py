@@ -412,7 +412,6 @@ class MicrogridEnv(gym.Env):
         money_from_prosumers = np.dot(total_consumption, transactive_price)
 
         total_reward = None
-
         if self.reward_function == "market_solving":
             total_reward = - abs(money_from_prosumers - money_to_utility)
         elif self.reward_function =="profit_maximizing":
@@ -442,15 +441,11 @@ class MicrogridEnv(gym.Env):
         for prosumerName in energy_consumptions:
             money_from_prosumers += (np.dot(np.maximum(0, energy_consumptions[prosumerName]), transactive_buyprice) + np.dot(np.minimum(0, energy_consumptions[prosumerName]), transactive_sellprice))
 
+        total_reward = None
         if self.reward_function == "market_solving":
-            total_reward = - abs(
-                    money_from_prosumers - money_to_utility
-                )
-
+            total_reward = - abs(money_from_prosumers - money_to_utility)
         elif self.reward_function =="profit_maximizing":
-            total_reward = (
-                    money_from_prosumers - money_to_utility
-                )
+            total_reward = money_from_prosumers - money_to_utility
 
         return total_reward
 
