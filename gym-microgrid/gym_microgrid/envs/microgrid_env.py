@@ -263,7 +263,7 @@ class MicrogridEnv(gym.Env):
 
         # Read renewable generation from CSV file. Index starts at 5 am on Jan 1, make appropriate adjustments. For year 2012: it is a leap year
         # generation = pd.read_csv('/Users/utkarshapets/Documents/Research/Optimisation attempts/building_data.csv')[['PV (W)']]
-        generation = np.squeeze(pd.read_csv('../building_data.csv')[['PV (W)']].values)
+        generation = np.squeeze(pd.read_csv('building_data.csv')[['PV (W)']].values)
         for day in range(0, 365):
             yearlonggeneration.append(
                 generation[day*self.day_length+19 : day*self.day_length+19+24]
