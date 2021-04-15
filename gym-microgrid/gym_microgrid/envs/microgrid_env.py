@@ -96,7 +96,7 @@ class MicrogridEnv(gym.Env):
         self.curr_iter = 0
 
         #Create Action Space
-        self.action_length = self.hours_in_day # 10 
+        self.action_length = 72 # TODO: Check with Utkarsha
         self.action_subspace = 3
         self.action_space = self._create_action_space()
 
