@@ -29,9 +29,14 @@
 VALS=(3.00 0.50 0.10 0.05 0.03 0.003 0.001 0)
 SMIRL_VAL=${VALS[$SLURM_ARRAY_TASK_ID]}
 
-LDIR=/global/scratch/$USER/.local$SLURM_ARRAY_TASK_ID
+BASE_DIR=/global/scratch/$USER
+
+LDIR=$BASE_DIR/.local$SLURM_ARRAY_TASK_ID
+LOGDIR_BASE=$BASE_DIR/logs
+
+
 rm -rf $LDIR
 mkdir -p $LDIR
 
 singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME --bind "$LDIR:$HOME/.local" --env SMIRL_VAL=$SMIRL_VAL library://aphoh/default/sg-k80-env:v1 \
-  sh -c './singularity_preamble.sh && ./batch_elt_run.sh $SMIRL_VAL'
+  sh -c './singularity_preamble.sh && ./batch_elt_run.sh $SMIRL_VAL $LOGDIR_BASE'
