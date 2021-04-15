@@ -315,6 +315,13 @@ def parse_args():
         default="v0",
     )
     parser.add_argument(
+        "--gym-env", 
+        help="Which Gym Environment you wihs to use",
+        type=str,
+        choices=["socialgame", "microgrid"],
+        default="socialgame"
+    )
+    parser.add_argument(
         "--algo",
         help="RL Algorithm",
         type=str,
