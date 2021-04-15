@@ -312,7 +312,7 @@ def vectorize_environment(env, args, include_non_vec_env=False):
         if not include_non_vec_env:
             return env
         else:
-            return env, gym_env
+            return env, socialgame_env
 
     elif args.library=="rllib" or args.library == "tune":
         #RL lib auto-vectorizes them, sweet
@@ -487,6 +487,19 @@ def parse_args():
         help="learning rate of the the agent",
         type=float,
         default=3e-4,
+    )
+    parser.add_argument(
+        "--pb_scenario",
+        type = int,
+        default = 1,
+        help = "1 is for repeated PV, 2 for small, 3 or medium scenario, 4 no batt, 5 no solar, 6 nothing",
+        choices = [ 1, 2, 3, 4, 5, 6 ]),
+    parser.add_argument(
+        "--two_price_state",
+        help="Whether to include buy and sell price in state (default = F)",
+        type=str,
+        default="F",
+        choices=["T", "F"],
     )
     parser.add_argument(
         "--bin_observation_space",
