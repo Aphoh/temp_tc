@@ -240,7 +240,7 @@ class MicrogridEnv(gym.Env):
             raise AssertionError
 
         # Get energy from building_data.csv file,  each office building has readings in kWh. Interpolate to fill missing values
-        df = pd.read_csv('../building_data.csv').interpolate().fillna(0)
+        df = pd.read_csv('building_data.csv').interpolate().fillna(0)
         building_names = df.columns[5:] # Skip first few columns 
         for i in range(len(building_names)):
             name = building_names[i]
