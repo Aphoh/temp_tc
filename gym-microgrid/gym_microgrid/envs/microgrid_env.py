@@ -67,7 +67,12 @@ class MicrogridEnv(gym.Env):
         self.reward_function = reward_function
         self.manual_tou_magnitude = manual_tou_magnitude
         self.complex_batt_pv_scenario = complex_batt_pv_scenario
-        self.exp_name=exp_name
+
+        self.smirl_weight = smirl_weight
+        self.use_smirl = smirl_weight > 0 if smirl_weight else False
+        self.hours_in_day = 10
+        self.last_smirl_reward = None
+        self.last_energy_reward = None
 
         self.day = 0
         self.days_of_week = [0, 1, 2, 3, 4]
