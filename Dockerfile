@@ -21,6 +21,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install -r ./requirements.txt
 
+RUN mkdir -p /app/database/
 COPY square_waves_two_weeks.csv /app/
 COPY models.py /app/
 COPY app.py /app/  
