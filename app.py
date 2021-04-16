@@ -6,12 +6,19 @@ from sqlalchemy.sql import text
 
 from config import (
     BASE_POINTS_VALUE,
+    DATE_FORMAT,
     END_OF_DAY_HOUR,
     END_OF_INITIAL_PERIOD,
     IS_MULTIAGENT,
     START_OF_DAY_HOUR,
+    TIMESTAMP_FORMAT,
 )
-from database import add_instance, get_all_instances_from_key, get_instance_from_key
+from database import (
+    add_instance,
+    get_all_instances_from_key,
+    get_instance_from_key,
+    load_square_data_df,
+)
 from init import create_app, get_base_price_signal_for_day, load_square_data_df
 from models import (
     Acknowledgments,
@@ -128,8 +135,8 @@ def add_participants():
     game_id = int(req.get("gameId"))
     name = req.get("name")
     active_status = req.get("active") == "true"
-    start_date = datetime.strptime(req.get("startDate"), "%d/%m/%Y").date()
-    end_date = datetime.strptime(req.get("endDate"), "%d/%m/%Y").date()
+    start_date = datetime.strptime(req.get("startDate"), DATE_FORMAT).date()
+    end_date = datetime.strptime(req.get("endDate"), DATE_FORMAT).date()
     num_winners = req.get("numWinners")
     participants = req.get("users")
 
@@ -163,7 +170,7 @@ def submit_energy_consumption():
     req = request.get_json()
 
     date_string = req.get("date")
-    timestamp = datetime.strptime(date_string, "%d/%m/%Y %H:%M")
+    timestamp = datetime.strptime(date_string, TIMESTAMP_FORMAT)
     game_id = int(req.get("gameId"))
 
     acknowledgment = add_instance(
@@ -183,7 +190,7 @@ def submit_energy_consumption():
 
         for energy_input in participant_info.get("energy"):
             timestamp_string = energy_input.get("datetime")
-            timestamp = datetime.strptime(timestamp_string, "%d/%m/%Y %H:%M")
+            timestamp = datetime.strptime(timestamp_string, TIMESTAMP_FORMAT)
             value = float(energy_input.get("usage"))
             unit = energy_input.get("unit")
             add_instance(
@@ -200,7 +207,7 @@ def submit_energy_consumption():
             for energy_type, vals_list in participant_info["preference"].items():
                 for vals in vals_list:
                     timestamp_string = vals.get("datetime")
-                    timestamp = datetime.strptime(timestamp_string, "%d/%m/%Y %H:%M")
+                    timestamp = datetime.strptime(timestamp_string, TIMESTAMP_FORMAT)
                     value = float(vals.get("value"))
                     add_instance(
                         EnergyUsage,
