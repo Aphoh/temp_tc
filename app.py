@@ -18,8 +18,10 @@ from database import (
     get_all_instances_from_key,
     get_instance_from_key,
     load_square_data_df,
+    get_base_price_signal_for_day,
+    load_square_data_df,
 )
-from init import create_app, get_base_price_signal_for_day, load_square_data_df
+from init import create_app
 from models import (
     Acknowledgments,
     BasePoints,
