@@ -94,6 +94,7 @@ class MicrogridEnv(gym.Env):
         #Cur_iter counts length of trajectory for current step (i.e. cur_iter = i^th hour in a 10-hour trajectory)
         #For our case cur_iter just flips between 0-1 (b/c 1-step trajectory)
         self.curr_iter = 0
+        self.total_iter = 0
 
         #Create Action Space
         self.action_length = 72 # TODO: Check with Utkarsha
@@ -472,6 +473,7 @@ class MicrogridEnv(gym.Env):
         # prev_price = self.prices[(self.day)]
         self.day = (self.day + 1) % 365 
         self.curr_iter += 1
+        self.total_iter += 1
 
         done = self.curr_iter > 0
 
