@@ -27,7 +27,10 @@ from ray.tune.integration.wandb import (wandb_mixin, WandbLoggerCallback)
 from ray.tune.logger import (DEFAULT_LOGGERS, pretty_print, UnifiedLogger)
 from ray.tune.integration.wandb import WandbLogger
 
-import pdb
+from ray.rllib.contrib.bandits.agents.lin_ucb import UCB_CONFIG
+from ray.rllib.contrib.bandits.agents.lin_ucb import LinUCBTrainer
+
+import IPython
 
 def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
     """
@@ -74,6 +77,20 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             analysis = tune.run(**exp_dict)
             analysis.results_df.to_csv("POC results.csv")
 
+        elif args.algo=="uc_bandit":
+            config = UCB_CONFIG
+            config["env"] = SocialGameEnvRLLib
+            config["env_config"] = vars(args)
+
+            analysis = tune.run(
+                "contrib/LinUCB",
+                config = config,
+                stop = {"training_iteration":20},
+                num_samples = 5
+            )
+
+            IPython.embed()
+
     elif library=="rllib":
 
         ray.init(local_mode=True)
@@ -95,6 +112,8 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["callbacks"] = lambda: callbacks
             config["env_config"] = vars(args)
             logger_creator = utils.custom_logger_creator(args.log_path)
+
+            # question for Tarang, what are callbacks for? 
 
             callbacks.save()
             if args.wandb:
@@ -134,6 +153,25 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     wandb.log({"total_loss": result["info"]["learner"]["default_policy"]["total_loss"]})
                 else:
                     print(log)
+
+        # Trying bandit without tuning 
+        elif args.algo=="uc_bandit":
+            config = UCB_CONFIG
+            config["env"] = SocialGameEnvRLLib
+            config["env_config"] = vars(args)
+            updated_agent = LinUCBTrainer(
+                config = config
+            )
+    
+            for i in range(num_steps):
+                result = updated_agent.train()
+                mean_reward = np.mean(result["hist_stats"]["episode_reward"])
+                if args.wandb:
+                    wandb.log({"episode_reward_mean" : mean_reward})
+                else:
+                    print(mean_reward)
+
+
 
 def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
     """
@@ -327,7 +365,7 @@ def parse_args():
         help="RL Algorithm",
         type=str,
         default="sac",
-        choices=["sac", "ppo", "maml"]
+        choices=["sac", "ppo", "maml", "uc_bandit"]
     )
     parser.add_argument(
         "--base_log_dir",
