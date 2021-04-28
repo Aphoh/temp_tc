@@ -6,3 +6,5 @@ stable-baselines3==0.11.1
 tensorboard==2.3.0
 ray[rllib,tune]==1.2.0
 GPUtil==1.4.0
+pandas==1.1.5
+tables==3.6.1

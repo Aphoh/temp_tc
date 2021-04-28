@@ -86,22 +86,33 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["sgd_minibatch_size"] = 16
             config["lr"] = 0.0002
             config["clip_param"] = 0.3
-            config["num_gpus"] = 0.2
+            config["num_gpus"] =  1
             config["num_workers"] = 1
             config["env"] = SocialGameEnvRLLib
-            config["callbacks"] = CustomCallbacks
+            obs_dim = 10*np.sum([args.energy_in_state, args.price_in_state])
+            out_path = os.path.join(args.log_path, "bulk_data.h5")
+            callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim)
+            config["callbacks"] = lambda: callbacks
             config["env_config"] = vars(args)
             logger_creator = utils.custom_logger_creator(args.log_path)
 
+            callbacks.save()
+            if args.wandb:
+                wandb.save(out_path)
+
             updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
             to_log = ["episode_reward_mean"]
-            for i in range(int(np.ceil(num_steps/train_batch_size))):
+            timesteps_total = 0
+            while timesteps_total < num_steps:
                 result = updated_agent.train()
+                timesteps_total = result["timesteps_total"]
                 log = {name: result[name] for name in to_log}
                 if args.wandb:
                     wandb.log(log)
                 else:
                     print(log)
+
+            callbacks.save()
 
         elif args.algo=="maml":
             config = ray_maml.DEFAULT_CONFIG.copy()
@@ -464,10 +475,24 @@ def parse_args():
         type = float,
         default=None,
     )
+    parser.add_argument(
+        "--circ_buffer_size",
+        help="Size of circular smirl buffer to use. Will use an unlimited size buffer in None",
+        type = float,
+        default=None,
+    )
+    parser.add_argument(
+        "--bulk_log_interval",
+        help="Interval at which to save bulk log information",
+        type=int,
+        default=10000
+    )
 
     args = parser.parse_args()
 
     args.log_path = os.path.join(os.path.abspath(args.base_log_dir), "{}_{}".format(args.exp_name, str(dt.datetime.today())))
+
+    os.makedirs(args.log_path, exist_ok=True)
 
     return args
 
@@ -486,10 +511,6 @@ def main():
         wandb.config.update(args)
 
     # Create environments
-
-    if os.path.exists(args.log_path):
-        print("Choose a new name for the experiment, log dir already exists")
-        raise ValueError
 
     env = get_environment(
         args,
