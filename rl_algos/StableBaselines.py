@@ -19,6 +19,9 @@ from stable_baselines3.common.env_checker import check_env
 import gym_socialgame.envs.utils as env_utils
 from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv)
 
+import gym_microgrid.envs.utils as env_utils
+from gym_microgrid.envs.microgrid_env import MicrogridEnvRLLib
+
 import ray
 import ray.rllib.agents.ppo as ray_ppo
 import ray.rllib.agents.maml as ray_maml
@@ -105,8 +108,14 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["clip_param"] = 0.3
             config["num_gpus"] =  1
             config["num_workers"] = 1
-            config["env"] = SocialGameEnvRLLib
-            obs_dim = 10*np.sum([args.energy_in_state, args.price_in_state])
+
+            if args.gym_env == "socialgame":
+                config["env"] = SocialGameEnvRLLib
+                obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
+            elif args.gym_env == "microgrid":
+                config["env"] = MicrogridEnvRLLib
+                obs_dim = 72 * np.sum([args.energy_in_state, args.price_in_state])
+
             out_path = os.path.join(args.log_path, "bulk_data.h5")
             callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim)
             config["callbacks"] = lambda: callbacks
@@ -119,7 +128,12 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             if args.wandb:
                 wandb.save(out_path)
 
-            updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
+
+            if args.gym_env == "socialgame":
+                updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
+            elif args.gym_env == "microgrid":
+                updated_agent = ray_ppo.PPOTrainer(config=config, env=MicrogridEnvRLLib, logger_creator=logger_creator)
+
             to_log = ["episode_reward_mean"]
             timesteps_total = 0
             while timesteps_total < num_steps:
@@ -288,26 +302,38 @@ def get_environment(args):
     else:
         reward_function = args.reward_function
 
-    socialgame_env = gym.make(
-        "gym_socialgame:socialgame{}".format(env_id),
-        action_space_string=action_space_string,
-        response_type_string=args.response_type_string,
-        one_day=args.one_day,
-        number_of_participants=args.number_of_participants,
-        price_in_state = args.price_in_state,
-        energy_in_state=args.energy_in_state,
-        pricing_type=args.pricing_type,
-        reward_function=reward_function,
-        bin_observation_space = args.bin_observation_space,
-        manual_tou_magnitude=args.manual_tou_magnitude,
-        smirl_weight=args.smirl_weight
-    )
-
+    if args.gym_env == "socialgame":
+        gym_env = gym.make(
+            "gym_socialgame:socialgame{}".format(env_id),
+            action_space_string=action_space_string,
+            response_type_string=args.response_type_string,
+            one_day=args.one_day,
+            number_of_participants=args.number_of_participants,
+            price_in_state = args.price_in_state,
+            energy_in_state=args.energy_in_state,
+            pricing_type=args.pricing_type,
+            reward_function=reward_function,
+            bin_observation_space = args.bin_observation_space,
+            manual_tou_magnitude=args.manual_tou_magnitude,
+            smirl_weight=args.smirl_weight
+        )
+    elif args.gym_env == "microgrid":
+        gym_env = gym.make(
+            "gym_microgrid:microgrid{}".format(env_id),
+            action_space_string=action_space_string,
+            response_type_string=args.response_type_string,
+            one_day=args.one_day,
+            number_of_participants=args.number_of_participants,
+            energy_in_state=args.energy_in_state,
+            pricing_type=args.pricing_type,
+            reward_function=reward_function,
+            manual_tou_magnitude=args.manual_tou_magnitude,
+            smirl_weight=args.smirl_weight # NOTE: Complex Batt PV and two price state default values used
+        )
 
     # Check to make sure any new changes to environment follow OpenAI Gym API
-    check_env(socialgame_env)
-
-    return socialgame_env
+    check_env(gym_env)
+    return gym_env
 
 def vectorize_environment(env, args, include_non_vec_env=False):
 
@@ -359,6 +385,13 @@ def parse_args():
         type=str,
         choices=["v0", "monthly"],
         default="v0",
+    )
+    parser.add_argument(
+        "--gym_env", 
+        help="Which Gym Environment you wihs to use",
+        type=str,
+        choices=["socialgame", "microgrid"],
+        default="socialgame"
     )
     parser.add_argument(
         "--algo",
@@ -485,13 +518,26 @@ def parse_args():
         help="reward function to test",
         type=str,
         default="log_cost_regularized",
-        choices=["scaled_cost_distance", "log_cost_regularized", "log_cost", "scd", "lcr", "lc"],
+        choices=["scaled_cost_distance", "log_cost_regularized", "log_cost", "scd", "lcr", "lc", "market_solving", "profit_maximizing"],
     )
     parser.add_argument(
         "--learning_rate",
         help="learning rate of the the agent",
         type=float,
         default=3e-4,
+    )
+    parser.add_argument(
+        "--pb_scenario",
+        type = int,
+        default = 1,
+        help = "1 is for repeated PV, 2 for small, 3 or medium scenario, 4 no batt, 5 no solar, 6 nothing",
+        choices = [ 1, 2, 3, 4, 5, 6 ]),
+    parser.add_argument(
+        "--two_price_state",
+        help="Whether to include buy and sell price in state (default = F)",
+        type=str,
+        default="F",
+        choices=["T", "F"],
     )
     parser.add_argument(
         "--bin_observation_space",
