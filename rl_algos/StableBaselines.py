@@ -17,7 +17,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.env_checker import check_env
 
 import gym_socialgame.envs.utils as env_utils
-from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv)
+from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv, SocialGameEnvRLLibPlanning)
 
 import gym_microgrid.envs.utils as env_utils
 from gym_microgrid.envs.microgrid_env import MicrogridEnvRLLib
@@ -115,6 +115,11 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             elif args.gym_env == "microgrid":
                 config["env"] = MicrogridEnvRLLib
                 obs_dim = 72 * np.sum([args.energy_in_state, args.price_in_state])
+            elif args.gym_env == "planning":
+                config["env"] = SocialgGameEnvRLLibPlanning
+                config["planning_steps"] = args.planning_steps
+                obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
+                
 
             out_path = os.path.join(args.log_path, "bulk_data.h5")
             callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim)
@@ -133,6 +138,8 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
             elif args.gym_env == "microgrid":
                 updated_agent = ray_ppo.PPOTrainer(config=config, env=MicrogridEnvRLLib, logger_creator=logger_creator)
+            elif args.gym_env == "planning":
+                updated_agent = ray_ppo.PPOTrainer(config=config, env=MicrogridEnvRLLibPlanning, logger_creator=logger_creator)
 
             to_log = ["episode_reward_mean"]
             timesteps_total = 0
@@ -331,6 +338,20 @@ def get_environment(args):
             smirl_weight=args.smirl_weight # NOTE: Complex Batt PV and two price state default values used
         )
 
+    elif args.gym_env == "planning":
+        gym_env = gym.make(
+            "gym_microgrid:planning{}".format(env_id),
+            action_space_string=action_space_string,
+            response_type_string=args.response_type_string,
+            one_day=args.one_day,
+            number_of_participants=args.number_of_participants,
+            energy_in_state=args.energy_in_state,
+            pricing_type=args.pricing_type,
+            reward_function=reward_function,
+            manual_tou_magnitude=args.manual_tou_magnitude,
+            smirl_weight=args.smirl_weight 
+        )
+
     # Check to make sure any new changes to environment follow OpenAI Gym API
     check_env(gym_env)
     return gym_env
@@ -490,7 +511,7 @@ def parse_args():
         help="How many planning iterations to partake in",
         type=int,
         default=0,
-        choices=[i for i in range(0, 100)],
+        choices=[i for i in range(0, 1000)],
     )
     parser.add_argument(
         "--planning_model",

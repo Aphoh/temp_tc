@@ -623,3 +623,95 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
         return player_dict
 
 
+class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
+    def __init__(self, env_config):
+        self.planning_steps = env_config["planning_steps"]
+        self.is_step_in_real=True
+        super().__init__(
+            env_config=env_config,
+        )
+        
+    def _simulate_humans_planning_model(self, action):
+        """
+        Purpose: A planning model to wrap simulate_humans. 
+
+        Args:
+            Action: 10-dim vector corresponding to action for each hour 
+
+        Returns:
+            Energy_consumption: Dictionary containing the energy usage by player and the average energy 
+        """
+
+        energy_consumptions = {}
+        total_consumption = np.zeros(10)
+
+        for player_name in self.player_dict:
+            #Get players response to agent's actions
+            player = self.player_dict[player_name]
+
+            player_energy = 86 + (self.points_multiplier * (action - 5)) ## need to change this baseline model
+
+            #Calculate energy consumption by player and in total (over the office)
+            energy_consumptions[player_name] = player_energy
+            total_consumption += player_energy
+
+        energy_consumptions["avg"] = total_consumption / self.number_of_participants
+        return energy_consumptions
+
+    def step(self, action):
+        """
+        Purpose: Takes a step in the environment
+
+        Args:
+            Action: 10-dim vector detailing player incentive for each hour (8AM - 5PM)
+
+        Returns:
+            Observation: State for the next day
+            Reward: Reward for said action
+            Done: Whether or not the day is done (should always be True b/c of 1-step trajectory)
+            Info: Other info (primarily for gym env based library compatibility)
+
+        Exceptions:
+            raises AssertionError if action is not in the action space
+        """
+        self.action = action
+
+        if not self.action_space.contains(action):
+            print("made it within the if statement in SG_E that tests if the action space doesn't have the action")
+            action = np.asarray(action)
+            if self.action_space_string == 'continuous':
+                action = np.clip(action, -1, 1) #TODO: check if correct
+
+            elif self.action_space_string == 'multidiscrete':
+                action = np.clip(action, 0, self.action_subspace - 1)
+
+        prev_price = self.prices[(self.day)]
+        self.day = (self.day + 1) % 365
+        self.curr_iter += 1
+        self.total_iter +=1
+
+        done = self.curr_iter > 0
+
+        points = self._points_from_action(action)
+
+        if not self.total_iter % (1 + self.planning_steps):
+            # take a step in real
+            self.is_step_in_real = True
+            energy_consumptions = self._simulate_humans(points)
+        else: 
+            # take a step in planning
+            self.is_step_in_real = False
+            energy_consumptions = self._simulate_humans_planning_model(points)
+
+        # HACK ALERT. USING AVG ENERGY CONSUMPTION FOR STATE SPACE. this will not work if people are not all the same
+
+        self.prev_energy = energy_consumptions["avg"]
+
+        observation = self._get_observation()
+        reward = self._get_reward(prev_price, energy_consumptions, reward_function = self.reward_function)
+
+        if self.use_smirl:
+            self.buffer.add(observation)
+
+        info = {}
+        return observation, reward, done, info
