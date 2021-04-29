@@ -301,7 +301,8 @@ class SocialGameEnv(gym.Env):
         energy_consumptions["avg"] = total_consumption / self.number_of_participants
         return energy_consumptions
 
-    def _get_reward(self, price, energy_consumptions, reward_function = "log_cost_regularized"):
+
+      def _get_reward(self, price, energy_consumptions, reward_function = "log_cost_regularized"):
         """
         Purpose: Compute reward given price signal and energy consumption of the office
 

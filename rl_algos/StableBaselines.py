@@ -49,8 +49,6 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
         )
 
     elif library=="tune":
-
-
         if args.algo=="ppo":
             config = ray_ppo.DEFAULT_CONFIG.copy()
             config["framework"] = "torch"
