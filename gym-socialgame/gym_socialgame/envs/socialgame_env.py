@@ -649,7 +649,7 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
             #Get players response to agent's actions
             player = self.player_dict[player_name]
 
-            player_energy = 86 + (self.points_multiplier * (action - 5)) ## need to change this baseline model
+            player_energy = 86 + (5 * (action - 5)) ## need to change this baseline model
 
             #Calculate energy consumption by player and in total (over the office)
             energy_consumptions[player_name] = player_energy

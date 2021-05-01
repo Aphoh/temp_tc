@@ -116,8 +116,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 config["env"] = MicrogridEnvRLLib
                 obs_dim = 72 * np.sum([args.energy_in_state, args.price_in_state])
             elif args.gym_env == "planning":
-                config["env"] = SocialgGameEnvRLLibPlanning
-                config["planning_steps"] = args.planning_steps
+                config["env"] = SocialGameEnvRLLibPlanning
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
                 
 
@@ -126,8 +125,6 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["callbacks"] = lambda: callbacks
             config["env_config"] = vars(args)
             logger_creator = utils.custom_logger_creator(args.log_path)
-
-            # question for Tarang, what are callbacks for? 
 
             callbacks.save()
             if args.wandb:
@@ -139,7 +136,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             elif args.gym_env == "microgrid":
                 updated_agent = ray_ppo.PPOTrainer(config=config, env=MicrogridEnvRLLib, logger_creator=logger_creator)
             elif args.gym_env == "planning":
-                updated_agent = ray_ppo.PPOTrainer(config=config, env=MicrogridEnvRLLibPlanning, logger_creator=logger_creator)
+                updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLibPlanning, logger_creator=logger_creator)
 
             to_log = ["episode_reward_mean"]
             timesteps_total = 0
@@ -340,7 +337,7 @@ def get_environment(args):
 
     elif args.gym_env == "planning":
         gym_env = gym.make(
-            "gym_microgrid:planning{}".format(env_id),
+            "gym_microgrid:socialgame{}".format(env_id),
             action_space_string=action_space_string,
             response_type_string=args.response_type_string,
             one_day=args.one_day,
@@ -411,7 +408,7 @@ def parse_args():
         "--gym_env", 
         help="Which Gym Environment you wihs to use",
         type=str,
-        choices=["socialgame", "microgrid"],
+        choices=["socialgame", "microgrid", "planning"],
         default="socialgame"
     )
     parser.add_argument(
@@ -616,22 +613,25 @@ def main():
         wandb.config.update(args)
 
     # Create environments
-
-    env = get_environment(
-        args,
-    )
-
-    # if you need to modify to bring in non vectorized env, you need to modify function returns
-    vec_env = vectorize_environment(
-        env,
-        args,
+    if args.library == "sb3":
+        env = get_environment(
+            args,
         )
 
-    print("Got vectorized environment, getting agent")
+        # if you need to modify to bring in non vectorized env, you need to modify function returns
+        vec_env = vectorize_environment(
+            env,
+            args,
+            )
 
-    # Create Agent
-    model = get_agent(vec_env, args, non_vec_env=None)
-    print("Got agent")
+        print("Got vectorized environment, getting agent")
+
+        # Create Agent
+        model = get_agent(vec_env, args, non_vec_env=None)
+        print("Got agent")
+
+    else:
+        model = get_agent(env=None, args = args, non_vec_env=None)
 
     # Train algo, (logging through Tensorboard)
     print("Beginning Testing!")

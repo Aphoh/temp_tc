@@ -54,7 +54,7 @@ class CustomCallbacks(DefaultCallbacks):
 
         socialgame_env = base_env.get_unwrapped()[0]
 
-        step_i = socialgame_env.total_itDO
+        step_i = socialgame_env.total_iter
         self.log_vals["step"].append(step_i)
 
         # TODO: Implement logging for planning_env 
