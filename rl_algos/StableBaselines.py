@@ -154,7 +154,6 @@ def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=Fals
     print("Std Reward: {:.3f}".format(std_reward))
 
 
-
 def maml_eval_fn(model_weights, args):
     """
     Purpose: Evaluate a model on 100 steps in MAML random test environments over the social game metaenvironment
