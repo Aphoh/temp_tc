@@ -1,7 +1,9 @@
 import wandb
 import pandas as pd
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.ticker import StrMethodFormatter
 api = wandb.Api()
 run_length = 100
 def analyze_run(run_name):
@@ -36,32 +38,47 @@ def analyze_run(run_name):
 # Specify which runs to visualize:
 # Each dict describes the title of the graph, label of each run, and which wandb runs to plot
 runs = {
-    "Adaptation to Threshold Response": {
-        "MAML+PPO": "social-game-rl/energy-demand-response-game/gjg5p7lo",
-        "PPO": "social-game-rl/energy-demand-response-game/3skaelp1"
-        
-    },
-    "Adaptation to Curtail and Shift Response": {
+    "Adaptation from Deterministic Function to Curtail and Shift Response": {
         "MAML+PPO": "social-game-rl/energy-demand-response-game/2g90nma7",
         "PPO": "social-game-rl/energy-demand-response-game/14x4i8so"
     },
-    "MAML+PPO Response to Number of Simulation Training Iterations": {
-        "50 iterations": "social-game-rl/energy-demand-response-game/24nd2dj1",
-        "100 iterations": "social-game-rl/energy-demand-response-game/2g90nma7",
-        "150 iterations": "social-game-rl/energy-demand-response-game/3tc4ni7u",
-        "200 iterations": "social-game-rl/energy-demand-response-game/2ev8r466"
-    }
+    "Adaptation from Linear and Sin Response to Threshold Response": {
+        "MAML+PPO": "social-game-rl/energy-demand-response-game/16vrb6mx",
+        "PPO": "social-game-rl/energy-demand-response-game/39c9y88s"
+        
+    },
+    # "MAML+PPO Response to Number of Simulation Training Iterations": {
+    #     "50 inner step iterations": "social-game-rl/energy-demand-response-game/24nd2dj1",
+    #     "100 inner step iterations": "social-game-rl/energy-demand-response-game/2g90nma7",
+    #     "150 inner step iterations": "social-game-rl/energy-demand-response-game/3tc4ni7u",
+    #     "200 inner step iterations": "social-game-rl/energy-demand-response-game/2ev8r466"
+    # }
 }
+plt.rcParams.update({'font.size': 32})
+plt.rcParams['axes.linewidth'] = 3 # set the value globally
 fig, axs = plt.subplots(len(runs.keys()), sharex=True, figsize=(20, 20))
+colors = ["g", "r", "c", "m"]
 for i, (name, wandb_ids) in enumerate(runs.items()):
-    for algo, id in wandb_ids.items():
+    if len(wandb_ids.keys()) > 2:
+        ax = axs
+    else:
+        ax = axs[i]
+    ax.yaxis.set_major_formatter(StrMethodFormatter('{x:,.1f}')) # 1 decimal place
+    for j, (algo, id) in enumerate(wandb_ids.items()):
         means, stes = analyze_run(id)
         x = list(range(len(means)))
-        axs[i].errorbar(x, means, yerr = stes, label=algo)
-    axs[i].set_title(name)
-    plt.ylabel("Average Reward")
-plt.xlabel("Gradient Update Steps")
-axs[0].legend()
-axs[-1].legend()
+        if len(wandb_ids.keys()) > 2:
+            ax.errorbar(x, means, yerr = stes, label=algo, linewidth=3.0, color=colors[j])
+        else:
+            ax.errorbar(x, means, yerr = stes, label=algo, linewidth=3.0)
+        # Hide the right and top spines
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+    ax.set_title(name)
+    ax.set_ylabel("Average Reward", fontsize=40)
+    if i == 0:
+        ax.legend()
+plt.xlabel("Gradient Update Steps", fontsize=40)
+
 fig.tight_layout()
-plt.savefig("maml_summary_analysis_grid.png")
+plt.savefig("maml_summary_perf_grid.png")

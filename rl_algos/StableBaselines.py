@@ -22,6 +22,7 @@ from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMe
 import ray
 import ray.rllib.agents.ppo as ray_ppo
 import ray.rllib.agents.maml as ray_maml
+import ray.rllib.agents.sac as ray_sac
 from ray import tune
 from ray.tune.integration.wandb import (wandb_mixin, WandbLoggerCallback)
 from ray.tune.logger import (DEFAULT_LOGGERS, pretty_print, UnifiedLogger)
@@ -49,7 +50,6 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
         )
 
     elif library=="tune":
-
 
         if args.algo=="ppo":
             config = ray_ppo.DEFAULT_CONFIG.copy()
@@ -81,7 +81,6 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             analysis.results_df.to_csv("POC results.csv")
 
     elif library=="rllib":
-
 
         if args.algo=="ppo":
             train_batch_size = 256
@@ -125,7 +124,15 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     with open(ckpt_dir, "wb") as ckpt_file:
                         agent_weights = agent.get_policy().get_weights()
                         pickle.dump(agent_weights, ckpt_file)
-                    #agent.save("./maml_ckpts") # does not load back correctly
+        elif args.algo == "sac" or args.algo == "warm_sac":
+            to_log = ["episode_reward_mean"]
+            for i in range(num_steps):
+                result = agent.train()
+                log = {name: result[name] for name in to_log}
+                if args.wandb:
+                    wandb.log(log)
+                else:
+                    print(log)
 
 def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
     """
@@ -205,8 +212,8 @@ def maml_eval_fn(model_weights, args):
         else:
             print(log)
     if args.wandb:
+        # Log everything to wandb
         for j in range(1, config["inner_adaptation_steps"]+1):
-
             wandb.log({"validation_inner_reward": validation_reward[j-1],
                         "inner_reward_step": j})
     model_weights2 = updated_agent.get_policy().get_weights()
@@ -215,6 +222,17 @@ def maml_eval_fn(model_weights, args):
         print("Weights were changed")
     else:
         print("Weights were not changed")
+ 
+def ppo_to_sac_weights(ppo_weights, sac_trainer):
+    sac_weights = sac_trainer.get_policy().get_weights()
+    # Copying policy network weights
+    sac_weights["action_model.action_0._model.0.weight"] = ppo_weights["fc_1/kernel"].T
+    sac_weights["action_model.action_0._model.0.bias"] = ppo_weights["fc_1/bias"]
+    sac_weights["action_model.action_1._model.0.weight"] = ppo_weights["fc_2/kernel"].T
+    sac_weights["action_model.action_1._model.0.bias"] = ppo_weights["fc_2/bias"]
+    sac_weights["action_model.action_out._model.0.weight"] = ppo_weights["fc_out/kernel"].T
+    sac_weights["action_model.action_out._model.0.bias"] = ppo_weights["fc_out/bias"]
+    sac_trainer.get_policy().set_weights(sac_weights)
     
 
 def get_agent(env, args, non_vec_env=None):
@@ -281,9 +299,26 @@ def get_agent(env, args, non_vec_env=None):
             config["inner_lr"] = args.maml_inner_lr
             config["lr"] = args.maml_outer_lr
             config["vf_clip_param"] = args.maml_vf_clip_param
-            trainer = ray_maml.MAMLTrainer(config=config, env = SocialGameMetaEnv)
+            trainer = ray_maml.MAMLTrainer(config=config, env=SocialGameMetaEnv)
             return trainer
-
+        elif args.algo == "sac" or args.algo == "warm_sac":
+            
+            config = ray_sac.DEFAULT_CONFIG
+            config["env"] = SocialGameEnvRLLib
+            config["env_config"] = vars(args)
+            config["framework"]="torch"
+            SACTrainer = ray_sac.SACTrainer(config, env = SocialGameEnvRLLib)
+            if args.algo == "warm_sac":
+                with open(args.warm_sac_ckpt, 'rb') as ckpt_file:
+                    ppo_weights = pickle.load(ckpt_file)
+                ppo_to_sac_weights(ppo_weights, SACTrainer)
+            return SACTrainer
+            # Testing setup
+            # a = SACTrainer.get_policy()
+            # b = a.get_weights()
+            # import pdb; pdb.set_trace()
+            # print(SACTrainer.get_policy().get_weights())
+            #TODO: read weights from warm_sac_ckpt file and add to policy
     else:
         raise NotImplementedError("Algorithm {} not supported. :( ".format(args.algo))
 
@@ -376,10 +411,10 @@ def vectorize_environment(env, args, include_non_vec_env=False):
         env = VecNormalize(venv)
 
         # env.step = temp_step_fnc
-        if not include_non_vec_env:
-            return env
-        else:
-            return env, socialgame_env
+        # if not include_non_vec_env:
+        #     return env
+        # else:
+        #     return env, socialgame_env
 
     elif args.library=="rllib" or args.library == "tune":
         #RL lib auto-vectorizes them, sweet
@@ -419,7 +454,7 @@ def parse_args():
         help="RL Algorithm",
         type=str,
         default="sac",
-        choices=["sac", "ppo", "maml"]
+        choices=["sac", "ppo", "maml", "warm_sac"]
     )
     parser.add_argument(
         "--base_log_dir",
@@ -626,6 +661,12 @@ def parse_args():
         "--val_num_trials",
         help = "Number of trials to run validation for",
         type=int,
+        default=5
+    )
+    parser.add_argument(
+        "--warm_sac_ckpt",
+        help="Path to initial models for warm starting SAC",
+        type=str,
         default=None
     )
     
@@ -672,10 +713,12 @@ def main():
     print("Got vectorized environment, getting agent")
     validation_mode = args.validate_checkpoint or args.validate_baseline
     weights = None
+
     if args.algo != "maml" or not validation_mode:
         # Create Agent
         model = get_agent(vec_env, args, non_vec_env=None)
         print("Got agent")
+
     if not validation_mode:
 
         # Train algo, (logging through Tensorboard)
@@ -693,7 +736,6 @@ def main():
     elif not args.validate_baseline:
         with open(args.validate_checkpoint, "rb") as ckpt_file:
             weights = pickle.load(ckpt_file)
-
 
     # Print evaluation of policy
     print("Beginning Evaluation")
