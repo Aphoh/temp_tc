@@ -84,20 +84,20 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
         if args.algo=="ppo":
             train_batch_size = 256
-            config = ray_ppo.DEFAULT_CONFIG.copy()
-            config["framework"] = "torch"
-            config["train_batch_size"] = train_batch_size
-            config["sgd_minibatch_size"] = 16
-            config["lr"] = 0.0002
-            config["clip_param"] = 0.3
-            config["num_gpus"] =  1
-            config["num_workers"] = 1
-            config["env"] = SocialGameEnvRLLib
-            config["callbacks"] = CustomCallbacks
-            config["env_config"] = vars(args)
-            logger_creator = utils.custom_logger_creator(args.log_path)
+            # config = ray_ppo.DEFAULT_CONFIG.copy()
+            # config["framework"] = "torch"
+            # config["train_batch_size"] = train_batch_size
+            # config["sgd_minibatch_size"] = 16
+            # config["lr"] = 0.0002
+            # config["clip_param"] = 0.3
+            # config["num_gpus"] =  1
+            # config["num_workers"] = 1
+            # config["env"] = SocialGameEnvRLLib
+            # config["callbacks"] = CustomCallbacks
+            # config["env_config"] = vars(args)
+            # logger_creator = utils.custom_logger_creator(args.log_path)
 
-            updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
+            #updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
             to_log = ["episode_reward_mean"]
             for i in range(int(np.ceil(num_steps/train_batch_size))):
                 result = agent.train()
@@ -106,6 +106,11 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     wandb.log(log)
                 else:
                     print(log)
+                if i % args.checkpoint_interval == 0:
+                        ckpt_dir = "ppo_ckpts/{}{}.ckpt".format(wandb.run.name, i)
+                        with open(ckpt_dir, "wb") as ckpt_file:
+                            agent_weights = agent.get_policy().get_weights()
+                            pickle.dump(agent_weights, ckpt_file)
 
         elif args.algo=="maml":
             
