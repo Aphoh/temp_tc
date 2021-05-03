@@ -125,10 +125,12 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                         agent_weights = agent.get_policy().get_weights()
                         pickle.dump(agent_weights, ckpt_file)
         elif args.algo == "sac" or args.algo == "warm_sac":
+            print("In SAC training loop")
             to_log = ["episode_reward_mean"]
             for i in range(num_steps):
                 result = agent.train()
                 log = {name: result[name] for name in to_log}
+                print(log)
                 if args.wandb:
                     wandb.log(log)
                 else:
@@ -312,6 +314,7 @@ def get_agent(env, args, non_vec_env=None):
                 with open(args.warm_sac_ckpt, 'rb') as ckpt_file:
                     ppo_weights = pickle.load(ckpt_file)
                 ppo_to_sac_weights(ppo_weights, SACTrainer)
+            print("got SAC trainer")
             return SACTrainer
             # Testing setup
             # a = SACTrainer.get_policy()
