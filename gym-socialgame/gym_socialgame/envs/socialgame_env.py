@@ -402,6 +402,10 @@ class SocialGameEnv(gym.Env):
         if self.use_smirl:
             self.buffer.add(observation)
 
+        if not self.total_iter % 10:
+            print("Iteration: "+str(self.total_iter) + " reward: " + str(reward))
+            wandb.log({"environment_reward":reward})
+
         info = {}
         return observation, reward, done, info
 

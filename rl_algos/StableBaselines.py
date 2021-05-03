@@ -37,6 +37,8 @@ from ray.rllib.agents.trainer_template import build_trainer
 from pprint import pprint
 import pdb
 
+import IPython
+
 def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
     """
     Purpose: Train agent in env, and then call eval function to evaluate policy
@@ -229,15 +231,24 @@ def maml_eval_fn(model_weights, args):
     else:
         print("Weights were not changed")
  
-def ppo_to_sac_weights(ppo_weights, sac_trainer):
+def ppo_to_sac_weights(ppo_weights, sac_trainer, ppo_torch=False):
     sac_weights = sac_trainer.get_policy().get_weights()
     # Copying policy network weights
-    sac_weights["action_model.action_0._model.0.weight"] = ppo_weights["fc_1/kernel"].T
-    sac_weights["action_model.action_0._model.0.bias"] = ppo_weights["fc_1/bias"]
-    sac_weights["action_model.action_1._model.0.weight"] = ppo_weights["fc_2/kernel"].T
-    sac_weights["action_model.action_1._model.0.bias"] = ppo_weights["fc_2/bias"]
-    sac_weights["action_model.action_out._model.0.weight"] = ppo_weights["fc_out/kernel"].T
-    sac_weights["action_model.action_out._model.0.bias"] = ppo_weights["fc_out/bias"]
+    if ppo_torch:
+        sac_weights["action_model.action_0._model.0.weight"] = ppo_weights["_hidden_layers.0._model.0.weight"]
+        sac_weights["action_model.action_0._model.0.bias"] = ppo_weights["_hidden_layers.0._model.0.bias"]
+        sac_weights["action_model.action_1._model.0.weight"] = ppo_weights["_hidden_layers.1._model.0.weight"]
+        sac_weights["action_model.action_1._model.0.bias"] = ppo_weights["_hidden_layers.1._model.0.bias"]
+        sac_weights["action_model.action_out._model.0.weight"] = ppo_weights["_logits._model.0.weight"]
+        sac_weights["action_model.action_out._model.0.bias"] = ppo_weights["_logits._model.0.bias"]
+    else:
+        sac_weights["action_model.action_0._model.0.weight"] = ppo_weights["fc_1/kernel"].T
+        sac_weights["action_model.action_0._model.0.bias"] = ppo_weights["fc_1/bias"]
+        sac_weights["action_model.action_1._model.0.weight"] = ppo_weights["fc_2/kernel"].T
+        sac_weights["action_model.action_1._model.0.bias"] = ppo_weights["fc_2/bias"]
+        sac_weights["action_model.action_out._model.0.weight"] = ppo_weights["fc_out/kernel"].T
+        sac_weights["action_model.action_out._model.0.bias"] = ppo_weights["fc_out/bias"]
+    
     sac_trainer.get_policy().set_weights(sac_weights)
     
 
@@ -304,6 +315,7 @@ def get_agent(env, args, non_vec_env=None):
             config["clip_actions"] = True
             config["inner_lr"] = args.maml_inner_lr
             config["lr"] = args.maml_outer_lr
+
             config["vf_clip_param"] = args.maml_vf_clip_param
             trainer = ray_maml.MAMLTrainer(config=config, env=SocialGameMetaEnv)
             return trainer
@@ -313,11 +325,19 @@ def get_agent(env, args, non_vec_env=None):
             config["env"] = SocialGameEnvRLLib
             config["env_config"] = vars(args)
             config["framework"]="torch"
+            config["output"] = "output_simulation_data"
+            config["output_max_file_size"] = 5000000
+            config["input"] = {
+                "output_simulation_data":.01,
+                "sampler":.99
+            }
+            config["input_evaluation"]= []
             SACTrainer = ray_sac.SACTrainer(config, env = SocialGameEnvRLLib)
+            a = SACTrainer.get_policy().get_weights()
             if args.algo == "warm_sac":
                 with open(args.warm_sac_ckpt, 'rb') as ckpt_file:
                     ppo_weights = pickle.load(ckpt_file)
-                ppo_to_sac_weights(ppo_weights, SACTrainer)
+                ppo_to_sac_weights(ppo_weights, SACTrainer, ppo_torch=True)
             print("got SAC trainer")
             return SACTrainer
             # Testing setup
