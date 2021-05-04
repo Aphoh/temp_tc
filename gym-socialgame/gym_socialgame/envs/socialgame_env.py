@@ -8,6 +8,7 @@ from gym_socialgame.envs.utils import price_signal
 from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
 from gym_socialgame.envs.buffers import GaussianBuffer
+import wandb
 
 class SocialGameEnv(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -404,7 +405,7 @@ class SocialGameEnv(gym.Env):
 
         if not self.total_iter % 10:
             print("Iteration: "+str(self.total_iter) + " reward: " + str(reward))
-            wandb.log({"environment_reward":reward})
+            # wandb.log({"environment_reward":reward})
 
         info = {}
         return observation, reward, done, info
