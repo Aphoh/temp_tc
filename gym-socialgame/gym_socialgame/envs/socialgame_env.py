@@ -405,7 +405,7 @@ class SocialGameEnv(gym.Env):
 
         if not self.total_iter % 10:
             print("Iteration: "+str(self.total_iter) + " reward: " + str(reward))
-            # wandb.log({"environment_reward":reward})
+            wandb.log({"environment_reward":reward})
 
         info = {}
         return observation, reward, done, info
