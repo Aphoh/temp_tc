@@ -295,6 +295,11 @@ def get_agent(env, args, non_vec_env=None):
             config["env"] = SocialGameEnvRLLib
             config["callbacks"] = CustomCallbacks
             config["env_config"] = vars(args)
+            # config["input"] = {
+            #     "output_simulation_data":.5,
+            #     "sampler":.5
+            # }
+            # config["input_evaluation"]=[]
             logger_creator = utils.custom_logger_creator(args.log_path)
 
             trainer = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
@@ -327,11 +332,11 @@ def get_agent(env, args, non_vec_env=None):
             config["env"] = SocialGameEnvRLLib
             config["env_config"] = vars(args)
             config["framework"]="torch"
-            config["output"] = "output_simulation_data"
-            config["output_max_file_size"] = 5000000
+            # config["output"] = "output_simulation_data"
+            # config["output_max_file_size"] = 5000000
             config["input"] = {
-                "output_simulation_data":.01,
-                "sampler":.99
+                "output_simulation_data":args.offline_sampling_prop,
+                "sampler":(1-args.offline_sampling_prop)
             }
             config["input_evaluation"]= []
             SACTrainer = ray_sac.SACTrainer(config, env = SocialGameEnvRLLib)
@@ -698,7 +703,11 @@ def parse_args():
         type=str,
         default=None
     )
-    
+    parser.add_argument(
+        "--offline_sampling_prop",
+        type = float,
+        default = .5
+    )
 
     args = parser.parse_args()
 

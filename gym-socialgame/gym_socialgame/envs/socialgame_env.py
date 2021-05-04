@@ -9,6 +9,10 @@ from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
 from gym_socialgame.envs.buffers import GaussianBuffer
 import wandb
+<<<<<<< HEAD
+=======
+
+>>>>>>> 1617edc560eff9de57cc0564128628820446c58a
 class SocialGameEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
