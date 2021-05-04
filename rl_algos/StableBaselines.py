@@ -333,7 +333,7 @@ def get_agent(env, args, non_vec_env=None):
             # config["output"] = "output_simulation_data"
             # config["output_max_file_size"] = 5000000
             config["input"] = {
-                "output_simulation_data":args.offline_sampling_pro
+                "output_simulation_data":args.offline_sampling_pro,
                 "sampler":(1-args.offline_sampling_prop)
             }
             config["input_evaluation"]= []
