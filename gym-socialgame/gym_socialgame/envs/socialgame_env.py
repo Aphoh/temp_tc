@@ -8,7 +8,7 @@ from gym_socialgame.envs.utils import price_signal
 from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
 from gym_socialgame.envs.buffers import GaussianBuffer
-
+import wandb
 class SocialGameEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
@@ -402,9 +402,9 @@ class SocialGameEnv(gym.Env):
         if self.use_smirl:
             self.buffer.add(observation)
 
-        if not self.total_iter % 10:
-            print("Iteration: "+str(self.total_iter) + " reward: " + str(reward))
-            wandb.log({"environment_reward":reward})
+        # if not self.total_iter % 10:
+        #     print("Iteration: "+str(self.total_iter) + " reward: " + str(reward))
+            #wandb.log({"environment_reward":reward})
 
         info = {}
         return observation, reward, done, info
@@ -523,7 +523,7 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
             print("SAMPLING TRAIN ENVIRONMENT")
             person_type = np.random.choice([DeterministicFunctionPerson], size = (n_tasks, ))
             points_multiplier = np.random.choice(range(10, 20), size = (n_tasks, ))
-            response = np.random.choice(['s', 'l'], size = (n_tasks, ))
+            response = np.random.choice(['s', 'l', 't'], size = (n_tasks, ))
             shiftable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
             curtailable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
             shiftByHours = np.random.choice(range(8), (n_tasks, ))
@@ -563,6 +563,7 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
             task: task of the meta-learning environment
         """
         self.task=task
+        self.player_dict = self._create_agents()
         # self.person_type = task["person_type"]
         # self.points_multiplier = task["points_multiplier"]
         # self.response = task["response"]

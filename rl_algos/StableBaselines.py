@@ -131,6 +131,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     with open(ckpt_dir, "wb") as ckpt_file:
                         agent_weights = agent.get_policy().get_weights()
                         pickle.dump(agent_weights, ckpt_file)
+
         elif args.algo == "sac" or args.algo == "warm_sac":
             print("In SAC training loop")
             to_log = ["episode_reward_mean"]
@@ -315,7 +316,8 @@ def get_agent(env, args, non_vec_env=None):
             config["clip_actions"] = True
             config["inner_lr"] = args.maml_inner_lr
             config["lr"] = args.maml_outer_lr
-
+            config["output"] = "ppo_output_sim_data"
+            config["output_max_file_size"] = 5000000
             config["vf_clip_param"] = args.maml_vf_clip_param
             trainer = ray_maml.MAMLTrainer(config=config, env=SocialGameMetaEnv)
             return trainer
