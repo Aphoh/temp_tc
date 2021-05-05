@@ -9,6 +9,7 @@ from gym_microgrid.envs.utils import price_signal
 from gym_microgrid.envs.agents import *
 from gym_microgrid.envs.reward import Reward
 from gym_socialgame.envs.buffers import GaussianBuffer
+import wandb
 
 class MicrogridEnv(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -221,7 +222,7 @@ class MicrogridEnv(gym.Env):
             raise AssertionError
 
         # Get energy from building_data.csv file,  each office building has readings in kWh. Interpolate to fill missing values
-        df = pd.read_csv('building_data.csv').interpolate().fillna(0)
+        df = pd.read_csv('/home/tc/gym-microgrid/gym_microgrid/envs/building_data.csv').interpolate().fillna(0)
         building_names = df.columns[5:] # Skip first few columns 
         for i in range(len(building_names)):
             name = building_names[i]
@@ -244,7 +245,7 @@ class MicrogridEnv(gym.Env):
 
         # Read renewable generation from CSV file. Index starts at 5 am on Jan 1, make appropriate adjustments. For year 2012: it is a leap year
         # generation = pd.read_csv('/Users/utkarshapets/Documents/Research/Optimisation attempts/building_data.csv')[['PV (W)']]
-        generation = np.squeeze(pd.read_csv('building_data.csv')[['PV (W)']].values)
+        generation = np.squeeze(pd.read_csv('/home/tc/gym-microgrid/gym_microgrid/envs/building_data.csv')[['PV (W)']].values)
         for day in range(0, 365):
             yearlonggeneration.append(
                 generation[day*self.day_length+19 : day*self.day_length+19+24]
@@ -270,7 +271,7 @@ class MicrogridEnv(gym.Env):
 
         # Read PG&E price from CSV file. Index starts at 5 am on Jan 1, make appropriate adjustments. For year 2012: it is a leap year
         # price = pd.read_csv('/Users/utkarshapets/Documents/Research/Optimisation attempts/building_data.csv')[['Price( $ per kWh)']]
-        price = np.squeeze(pd.read_csv('building_data.csv')[['Price( $ per kWh)']].values)
+        price = np.squeeze(pd.read_csv('/home/tc/gym-microgrid/gym_microgrid/envs/building_data.csv')[['Price( $ per kWh)']].values)
 
         for day in range(0, 365):
             buyprice = price[day*self.day_length+19 : day*self.day_length+19+24]
@@ -391,6 +392,14 @@ class MicrogridEnv(gym.Env):
         total_consumption = energy_consumptions['Total']
         money_to_utility = np.dot(np.maximum(0, total_consumption), buyprice_grid) + np.dot(np.minimum(0, total_consumption), sellprice_grid)
         money_from_prosumers = np.dot(total_consumption, transactive_price)
+
+        net_exports = np.minimum(0, total_consumption)
+        if not self.total_iter % 10:
+            print("Net export: " + 
+                str(np.sum(net_exports)) +
+                " at Iteration: " + 
+                str(self.total_iter))
+            wandb.log({"Net_export":np.sum(net_exports)})
 
         total_energy_reward = 0
         total_smirl_reward = 0
