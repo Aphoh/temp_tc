@@ -32,6 +32,7 @@ from ray.tune.integration.wandb import WandbLogger
 
 from ray.rllib.contrib.bandits.agents.lin_ucb import UCB_CONFIG
 from ray.rllib.contrib.bandits.agents.lin_ucb import LinUCBTrainer
+from ordinal_action_overwrite import OrdinalStochasticSampler
 
 import IPython
 
@@ -92,7 +93,6 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 num_samples = 5
             )
 
-            IPython.embed()
 
     elif library=="rllib":
 
@@ -108,6 +108,12 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["clip_param"] = 0.3
             config["num_gpus"] =  1
             config["num_workers"] = 1
+            if args.action_space == "ordinal":
+                config["exploration_config"] = {
+                    "type":OrdinalStochasticSampler
+                }
+
+            IPython.embed()
 
             if args.gym_env == "socialgame":
                 config["env"] = SocialGameEnvRLLib
@@ -286,6 +292,9 @@ def get_environment(args):
         )
         action_space_string = convert_action_space_str(args.action_space)
 
+    if args.action_space=="ordinal":
+        args.action_space_string ="multidiscrete"
+
     if args.env_id == "hourly":
         env_id = "_hourly-v0"
     elif args.env_id == "monthly":
@@ -431,7 +440,7 @@ def parse_args():
         "--action_space",
         help="Action Space for Algo (only used for algos that are compatable with both discrete & cont",
         default="c",
-        choices=["c", "c_norm", "d", "fourier"],
+        choices=["c", "c_norm", "d", "fourier", "ordinal"],
     )
     parser.add_argument(
         "--action_space_string",

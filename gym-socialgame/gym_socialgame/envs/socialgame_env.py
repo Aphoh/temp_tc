@@ -170,7 +170,7 @@ class SocialGameEnv(gym.Env):
         elif self.action_space_string == "continuous_normalized":
             return spaces.Box(low = 0, high = np.inf, shape = (self.action_length,), dtype=np.float32)
 
-        elif self.action_space_string == "multidiscrete":
+        elif self.action_space_string == "multidiscrete" or action_space_string=="ordinal":
             discrete_space = [self.action_subspace] * self.action_length  # num of actions times the length of the action space. [a1, a2, a3], [a1, a2, a3]
             return spaces.MultiDiscrete(discrete_space)
 
