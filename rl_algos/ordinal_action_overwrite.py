@@ -99,6 +99,13 @@ class OrdinalStochasticSampler(StochasticSampling):
         logits = action_dist.inputs
         s = expit(logits)
 
+        print("--"*10)
+
+        print(action_dist.inputs)
+
+        print("--"*10)
+        print("--"*10)
+
         ss_output = []
         for ss in s:
             row = []
@@ -111,6 +118,8 @@ class OrdinalStochasticSampler(StochasticSampling):
             ss_output.append(row)
 
         action_dist.inputs = torch.tensor(ss_output)
+
+        print(action_dist.inputs)
 
         # Apply exploration.
         if explore:
