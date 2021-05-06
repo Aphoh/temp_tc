@@ -96,7 +96,7 @@ class OrdinalStochasticSampler(StochasticSampling):
         self.last_timestep = timestep if timestep is not None else \
             self.last_timestep + 1
 
-        logits = action_dist.inputs
+        logits = action_dist.inputs.cpu()
         s = expit(logits)
 
         print("--"*10)
