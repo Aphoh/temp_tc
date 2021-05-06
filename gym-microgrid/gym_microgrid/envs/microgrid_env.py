@@ -428,10 +428,14 @@ class MicrogridEnv(gym.Env):
         total_consumption = energy_consumptions['Total']
         money_to_utility = np.dot(np.maximum(0, total_consumption), buyprice_grid) + np.dot(np.minimum(0, total_consumption), sellprice_grid)
 
+        net_exports=0
         money_from_prosumers = 0
         for prosumerName in energy_consumptions:
             money_from_prosumers += (np.dot(np.maximum(0, energy_consumptions[prosumerName]), transactive_buyprice) + np.dot(np.minimum(0, energy_consumptions[prosumerName]), transactive_sellprice))
+            net_exports += np.sum(np.minimum(0, energy_consumptions[prosumerName]))
 
+        wandb.log({"net_exports":net_exports})
+        
         total_reward = None
         if self.reward_function == "market_solving":
             total_reward = - abs(money_from_prosumers - money_to_utility)
