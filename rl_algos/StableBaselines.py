@@ -112,7 +112,8 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 config["exploration_config"] = {
                     "type":OrdinalStochasticSampler
                 }
-
+            print("CONFIG")
+            print(config["exploration_config"])
             if args.gym_env == "socialgame":
                 config["env"] = SocialGameEnvRLLib
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
