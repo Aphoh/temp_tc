@@ -246,3 +246,6 @@ ray_results/
 *_run.sh
 
 .dvc
+
+# API work
+database/
