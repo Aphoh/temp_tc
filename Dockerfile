@@ -2,8 +2,8 @@ FROM "nvcr.io/nvidia/pytorch:20.11-py3"
 
 # You should really specify these unless running the run.sh script
 ARG UNAME=tc
-ARG UID=501
-ARG GID=1000
+ARG UID=$(id -u)
+ARG GID=$(id -g)
 
 RUN python -m pip install --upgrade pip
 RUN apt-get update && apt-get install -y libgl1-mesa-glx
