@@ -86,20 +86,6 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
         if args.algo=="ppo":
             train_batch_size = 256
-            # config = ray_ppo.DEFAULT_CONFIG.copy()
-            # config["framework"] = "torch"
-            # config["train_batch_size"] = train_batch_size
-            # config["sgd_minibatch_size"] = 16
-            # config["lr"] = 0.0002
-            # config["clip_param"] = 0.3
-            # config["num_gpus"] =  1
-            # config["num_workers"] = 1
-            # config["env"] = SocialGameEnvRLLib
-            # config["callbacks"] = CustomCallbacks
-            # config["env_config"] = vars(args)
-            # logger_creator = utils.custom_logger_creator(args.log_path)
-
-            #updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
             to_log = ["episode_reward_mean"]
             for i in range(int(np.ceil(num_steps/train_batch_size))):
                 result = agent.train()
@@ -109,10 +95,10 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 else:
                     print(log)
                 if i % args.checkpoint_interval == 0:
-                        ckpt_dir = "ppo_ckpts/{}{}.ckpt".format(wandb.run.name, i)
-                        with open(ckpt_dir, "wb") as ckpt_file:
-                            agent_weights = agent.get_policy().get_weights()
-                            pickle.dump(agent_weights, ckpt_file)
+                    ckpt_dir = "ppo_ckpts/{}{}.ckpt".format(wandb.run.name, i)
+                    with open(ckpt_dir, "wb") as ckpt_file:
+                        agent_weights = agent.get_policy().get_weights()
+                        pickle.dump(agent_weights, ckpt_file)
 
         elif args.algo=="maml":
             
@@ -143,6 +129,11 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     wandb.log(log)
                 else:
                     print(log)
+                if i % args.checkpoint_interval == 0:
+                    ckpt_dir = "sac_ckpts/{}{}.ckpt".format(wandb.run.name, i)
+                    with open(ckpt_dir, "wb") as ckpt_file:
+                        agent_weights = agent.get_policy().get_weights()
+                        pickle.dump(agent_weights, ckpt_file)
 
 def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
     """
@@ -252,7 +243,6 @@ def ppo_to_sac_weights(ppo_weights, sac_trainer, ppo_torch=False):
     
     sac_trainer.get_policy().set_weights(sac_weights)
     
-
 def get_agent(env, args, non_vec_env=None):
     """
     Purpose: Import algo, policy and create agent
@@ -321,8 +311,9 @@ def get_agent(env, args, non_vec_env=None):
             config["clip_actions"] = True
             config["inner_lr"] = args.maml_inner_lr
             config["lr"] = args.maml_outer_lr
-            config["output"] = "ppo_output_sim_data"
+            config["output"] = "ppo_output_sim_data2"
             config["output_max_file_size"] = 5000000
+            config["output_compress_columns"] = ["obs", "new_obs", "reward"]
             config["vf_clip_param"] = args.maml_vf_clip_param
             trainer = ray_maml.MAMLTrainer(config=config, env=SocialGameMetaEnv)
             return trainer
@@ -331,20 +322,23 @@ def get_agent(env, args, non_vec_env=None):
             config = ray_sac.DEFAULT_CONFIG
             config["env"] = SocialGameEnvRLLib
             config["env_config"] = vars(args)
-            config["framework"]="torch"
-            # config["output"] = "output_simulation_data"
-            # config["output_max_file_size"] = 5000000
-            config["input"] = {
-                "output_simulation_data":args.offline_sampling_prop,
-                "sampler":(1-args.offline_sampling_prop)
-            }
+            config["framework"]="tf"
+            config["output"] = "sac_output_sim_data"
+            config["output_max_file_size"] = 5000000
+            #config["postprocess_inputs"]=True
+            config["input"] = {}
+            if args.offline_sampling_prop != 0:
+                config["input"][args.offline_data_path] = args.offline_sampling_prop
+            if args.offline_sampling_prop!=1:
+                config["input"]["sampler"]=(1-args.offline_sampling_prop)
             config["input_evaluation"]= []
             SACTrainer = ray_sac.SACTrainer(config, env = SocialGameEnvRLLib)
             a = SACTrainer.get_policy().get_weights()
             if args.algo == "warm_sac":
                 with open(args.warm_sac_ckpt, 'rb') as ckpt_file:
                     ppo_weights = pickle.load(ckpt_file)
-                ppo_to_sac_weights(ppo_weights, SACTrainer, ppo_torch=True)
+                #ppo_to_sac_weights(ppo_weights, SACTrainer, ppo_torch=True)
+                SACTrainer.get_policy().set_weights(ppo_weights)
             print("got SAC trainer")
             return SACTrainer
             # Testing setup
@@ -355,7 +349,6 @@ def get_agent(env, args, non_vec_env=None):
             #TODO: read weights from warm_sac_ckpt file and add to policy
     else:
         raise NotImplementedError("Algorithm {} not supported. :( ".format(args.algo))
-
 
 def args_convert_bool(args):
     """
@@ -424,7 +417,9 @@ def get_environment(args):
         reward_function=reward_function,
         bin_observation_space = args.bin_observation_space,
         manual_tou_magnitude=args.manual_tou_magnitude,
-        smirl_weight=args.smirl_weight
+        smirl_weight=args.smirl_weight,
+        person_type_string=args.person_type_string,
+        points_multiplier=args.points_multiplier
     )
 
 
@@ -534,6 +529,19 @@ def parse_args():
         type=str,
         default="l",
         choices=["l", "t", "s"],
+    )
+    parser.add_argument(
+        "--person_type_string",
+        help="Player response type (c = Curtail and Shift, d = Deterministic Function)",
+        type=str,
+        default="c",
+        choices=["c", "d"]
+    )
+    parser.add_argument(
+        "--points_multiplier",
+        help="Points multiplier for each agent",
+        type=float,
+        default=10.0,
     )
     parser.add_argument(
         "--one_day",
@@ -675,7 +683,7 @@ def parse_args():
     )
     parser.add_argument(
         "--checkpoint_interval",
-        help = "How many training iterations between checkpoints (only implemented for MAML)",
+        help = "How many training iterations between checkpoints",
         type = int,
         default=100
     )
@@ -707,6 +715,11 @@ def parse_args():
         "--offline_sampling_prop",
         type = float,
         default = .5
+    )
+    parser.add_argument(
+        "--offline_data_path",
+        type=str,
+        default="output_simulation_data"
     )
 
     args = parser.parse_args()
