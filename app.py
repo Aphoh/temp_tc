@@ -277,7 +277,6 @@ def submit_energy_consumption():
     )
 
     for participant_info in req.get("users"):
-        print(participant_info["username"])
         participant_name = participant_info.get("username")
         # participant_object = get_instance_from_key(
         #     Participant, "username", text(participant_name)
