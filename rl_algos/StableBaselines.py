@@ -32,7 +32,7 @@ from ray.tune.integration.wandb import WandbLogger
 
 from ray.rllib.contrib.bandits.agents.lin_ucb import UCB_CONFIG
 from ray.rllib.contrib.bandits.agents.lin_ucb import LinUCBTrainer
-from ordinal_action_overwrite import OrdinalStochasticSampler
+from ordinal_action_overwrite2 import OrdinalStochasticSampler
 
 import IPython
 
