@@ -35,9 +35,11 @@ class OrdinalStochasticSampler(StochasticSampling):
                                timestep: Union[int, TensorType],
                                explore: bool = True):
         if self.framework == "torch":
+            print("ENTERING TORCH EXPLORATION")
             return self._get_torch_exploration_action(action_distribution,
                                                       timestep, explore)
         else:
+            print("ENTERING TF EXPLORATION")
             return self._get_tf_exploration_action_op(action_distribution,
                                                       timestep, explore)
 
