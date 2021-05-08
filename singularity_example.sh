@@ -23,4 +23,4 @@
 # Wall clock limit (2hrs):
 #SBATCH --time=04:00:00
 
-singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME library://aphoh/default/sg-k80-env:v1 sh -c './singularity_preamble.sh && ./example_run.sh'
+singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME library://aphoh/default/sg-k80-env:v1 sh -c './singularity_preamble.sh && ./test_example_run.sh'

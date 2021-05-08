@@ -17,7 +17,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.env_checker import check_env
 
 import gym_socialgame.envs.utils as env_utils
-from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv)
+from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv, SocialGameMultiAgent)
 
 import gym_microgrid.envs.utils as env_utils
 from gym_microgrid.envs.microgrid_env import MicrogridEnvRLLib
@@ -93,7 +93,11 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["num_workers"] = 1
 
             if args.gym_env == "socialgame":
-                config["env"] = SocialGameEnvRLLib
+                if args.multi_env:
+                    config["env"] = SocialGameMultiAgent
+                else:
+                    config["env"] = SocialGameEnvRLLib
+
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
             elif args.gym_env == "microgrid":
                 config["env"] = MicrogridEnvRLLib
@@ -221,6 +225,9 @@ def args_convert_bool(args):
         args.test_planning_env = utils.string2bool(args.test_planning_env)
     if not isinstance(args.bin_observation_space, (bool)):
         args.bin_observation_space = utils.string2bool(args.bin_observation_space)
+    if not isinstance(args.multi_env, (bool)):
+        args.multi_env = utils.string2bool(args.multi_env)
+
 
 def get_environment(args):
     """
@@ -532,6 +539,13 @@ def parse_args():
         help="Interval at which to save bulk log information",
         type=int,
         default=10000
+    )
+    parser.add_argument(
+        "--multi_env",
+        help="Should the environment be for multi-agent",
+        type=str,
+        default="F",
+        choices=["T", "F"],
     )
 
     args = parser.parse_args()

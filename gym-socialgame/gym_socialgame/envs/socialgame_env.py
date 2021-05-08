@@ -9,6 +9,8 @@ from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
 from gym_socialgame.envs.buffers import (GaussianBuffer, GaussianCircularBuffer)
 
+from ray.rllib.env.multi_agent_env import MultiAgentEnv, make_multi_agent
+
 class SocialGameEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
@@ -622,4 +624,4 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
 
         return player_dict
 
-
+SocialGameMultiAgent = make_multi_agent(lambda config: SocialGameEnvRLLib(config))
