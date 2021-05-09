@@ -1,6 +1,7 @@
 import argparse
 import numpy as np
 import gym
+from ray.rllib.env.multi_agent_env import MultiAgentEnv
 import utils
 from custom_callbacks import CustomCallbacks
 import wandb
@@ -35,7 +36,6 @@ from ray.tune.logger import DEFAULT_LOGGERS, pretty_print, UnifiedLogger
 from ray.tune.integration.wandb import WandbLogger
 
 import pdb
-
 
 def train(agent, num_steps, tb_log_name, args=None, library="sb3"):
     """
@@ -99,10 +99,26 @@ def train(agent, num_steps, tb_log_name, args=None, library="sb3"):
 
             if args.gym_env == "socialgame":
                 if args.multi_env:
+                    num_agents = args.num_agents
+                    temp_env = SocialGameMultiAgent(vars(args))
+                    args.num_agents = num_agents
+                    def gen_policy():
+                        config = {
+                            "gamma": random.choice([0.95, 0.99]),
+                        }
+                        return (None, temp_env.observation_space, temp_env.action_space, config)
+                        
                     print("Using Multiagent")
                     config["env"] = SocialGameMultiAgent
-                    config["num_agents"] = args.num_agents
-                    print("num_agents", config["num_agents"])
+                    config["multiagent"] = {
+                        "multiagent": {
+                            "policies": (policies := {
+                                f"policy_{i}": gen_policy()
+                                for i in range(args.num_agents)
+                            }),
+                            "policy_mapping_fn": lambda id: random.choice(list(policies.keys()))
+                        }
+                    }
                 else:
                     config["env"] = SocialGameEnvRLLib
 
@@ -117,6 +133,7 @@ def train(agent, num_steps, tb_log_name, args=None, library="sb3"):
             )
             config["callbacks"] = lambda: callbacks
             config["env_config"] = vars(args)
+            config["env_config"]["num_agents"] = args.num_agents
             logger_creator = utils.custom_logger_creator(args.log_path)
 
             callbacks.save()
@@ -125,7 +142,7 @@ def train(agent, num_steps, tb_log_name, args=None, library="sb3"):
 
             if args.gym_env == "socialgame":
                 updated_agent = ray_ppo.PPOTrainer(
-                    config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator
+                    config=config, env=config["env"], logger_creator=logger_creator
                 )
             elif args.gym_env == "microgrid":
                 updated_agent = ray_ppo.PPOTrainer(

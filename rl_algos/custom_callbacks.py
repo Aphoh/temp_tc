@@ -16,43 +16,51 @@ from ray.rllib.policy import Policy
 from ray.rllib.policy.sample_batch import SampleBatch
 
 
-
 class CustomCallbacks(DefaultCallbacks):
-
     def __init__(self, log_path, save_interval, obs_dim=10):
         super().__init__()
-        self.log_path=log_path
-        self.save_interval=save_interval
+        self.log_path = log_path
+        self.save_interval = save_interval
         self.cols = ["step", "energy_reward", "smirl_reward"]
         for i in range(obs_dim):
             self.cols.append("observation_" + str(i))
         self.obs_dim = obs_dim
         self.log_vals = {k: [] for k in self.cols}
-        self.log_path=log_path
+        self.log_path = log_path
 
     def save(self):
-        log_df=pd.DataFrame(data=self.log_vals)
+        log_df = pd.DataFrame(data=self.log_vals)
         log_df.to_hdf(self.log_path, "metrics", append=True, format="table")
         for v in self.log_vals.values():
             v.clear()
 
-        self.steps_since_save=0
+        self.steps_since_save = 0
 
-
-    def on_episode_start(self, *, worker: RolloutWorker, base_env: BaseEnv,
-                         policies: Dict[str, Policy],
-                         episode: MultiAgentEpisode, env_index: int, **kwargs):
+    def on_episode_start(
+        self,
+        *,
+        worker: RolloutWorker,
+        base_env: BaseEnv,
+        policies: Dict[str, Policy],
+        episode: MultiAgentEpisode,
+        env_index: int,
+        **kwargs
+    ):
 
         socialgame_env = base_env.get_unwrapped()[0]
-        if socialgame_env.use_smirl:
-            episode.user_data["smirl_reward"] = []
-            episode.hist_data["smirl_reward"] = []
 
         episode.user_data["energy_reward"] = []
         episode.hist_data["energy_reward"] = []
 
-    def on_episode_step(self, *, worker: RolloutWorker, base_env: BaseEnv,
-                        episode: MultiAgentEpisode, env_index: int, **kwargs):
+    def on_episode_step(
+        self,
+        *,
+        worker: RolloutWorker,
+        base_env: BaseEnv,
+        episode: MultiAgentEpisode,
+        env_index: int,
+        **kwargs
+    ):
 
         socialgame_env = base_env.get_unwrapped()[0]
 
@@ -89,31 +97,47 @@ class CustomCallbacks(DefaultCallbacks):
 
         return
 
-    def on_episode_end(self, *, worker: RolloutWorker, base_env: BaseEnv,
-                       policies: Dict[str, Policy], episode: MultiAgentEpisode,
-                       env_index: int, **kwargs):
+    def on_episode_end(
+        self,
+        *,
+        worker: RolloutWorker,
+        base_env: BaseEnv,
+        policies: Dict[str, Policy],
+        episode: MultiAgentEpisode,
+        env_index: int,
+        **kwargs
+    ):
         socialgame_env = base_env.get_unwrapped()[0]
-        episode.custom_metrics["energy_reward"] = np.mean(episode.user_data["energy_reward"])
+        episode.custom_metrics["energy_reward"] = np.mean(
+            episode.user_data["energy_reward"]
+        )
 
         if socialgame_env.use_smirl:
-            episode.custom_metrics["smirl_reward"] = np.mean(episode.user_data["smirl_reward"])
+            episode.custom_metrics["smirl_reward"] = np.mean(
+                episode.user_data["smirl_reward"]
+            )
 
         return
 
-    def on_sample_end(self, *, worker: RolloutWorker, samples: SampleBatch,
-                      **kwargs):
+    def on_sample_end(self, *, worker: RolloutWorker, samples: SampleBatch, **kwargs):
 
         return
 
     def on_train_result(self, *, trainer, result: dict, **kwargs):
         result["callback_ok"] = True
 
-
     def on_postprocess_trajectory(
-            self, *, worker: RolloutWorker, episode: MultiAgentEpisode,
-            agent_id: str, policy_id: str, policies: Dict[str, Policy],
-            postprocessed_batch: SampleBatch,
-            original_batches: Dict[str, SampleBatch], **kwargs):
+        self,
+        *,
+        worker: RolloutWorker,
+        episode: MultiAgentEpisode,
+        agent_id: str,
+        policy_id: str,
+        policies: Dict[str, Policy],
+        postprocessed_batch: SampleBatch,
+        original_batches: Dict[str, SampleBatch],
+        **kwargs
+    ):
         if "num_batches" not in episode.custom_metrics:
             episode.custom_metrics["num_batches"] = 0
 
