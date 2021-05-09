@@ -89,12 +89,15 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["sgd_minibatch_size"] = 16
             config["lr"] = 0.0002
             config["clip_param"] = 0.3
-            config["num_gpus"] =  1
+            config["num_gpus"] = 1
             config["num_workers"] = 1
 
             if args.gym_env == "socialgame":
                 if args.multi_env:
+                    print("Using Multiagent")
                     config["env"] = SocialGameMultiAgent
+                    config["num_agents"] = args.num_agents
+                    print("num_agents", config["num_agents"])
                 else:
                     config["env"] = SocialGameEnvRLLib
 
@@ -546,6 +549,12 @@ def parse_args():
         type=str,
         default="F",
         choices=["T", "F"],
+    )
+    parser.add_argument(
+        "--num_agents",
+        help="How many agents to use for multiagent",
+        type=int,
+        default=2,
     )
 
     args = parser.parse_args()
