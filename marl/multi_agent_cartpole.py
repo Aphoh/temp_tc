@@ -93,6 +93,7 @@ if __name__ == "__main__":
     }
 
     results = tune.run("PPO", stop=stop, config=config, verbose=1)
+    results.results_df.to_csv("ray_results.csv")
 
     if args.as_test:
         check_learning_achieved(results, args.stop_reward)
