@@ -11,6 +11,8 @@ from gym_microgrid.envs.reward import Reward
 from gym_socialgame.envs.buffers import GaussianBuffer
 import wandb
 
+IPython.embed()
+
 class MicrogridEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
@@ -485,6 +487,7 @@ class MicrogridEnv(gym.Env):
         self.total_iter += 1
 
         done = self.curr_iter > 0
+
 
         if not self.two_price_state:
             price = self._price_from_action(action)
