@@ -40,7 +40,7 @@ class OrdinalStochasticSampler(StochasticSampling):
 
         print("--"*10)
 
-        print(action_dist.inputs)
+        print(action_distribution.inputs)
 
         print("--"*10)
         print("--"*10)

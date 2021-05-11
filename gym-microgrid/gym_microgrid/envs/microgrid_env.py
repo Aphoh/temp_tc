@@ -486,6 +486,7 @@ class MicrogridEnv(gym.Env):
 
         done = self.curr_iter > 0
 
+
         if not self.two_price_state:
             price = self._price_from_action(action)
             self.price = price
