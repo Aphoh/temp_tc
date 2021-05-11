@@ -9,10 +9,7 @@ from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
 from gym_socialgame.envs.buffers import GaussianBuffer
 import wandb
-<<<<<<< HEAD
-=======
 
->>>>>>> 1617edc560eff9de57cc0564128628820446c58a
 class SocialGameEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
@@ -28,7 +25,9 @@ class SocialGameEnv(gym.Env):
         reward_function = "log_cost_regularized",
         bin_observation_space=False,
         manual_tou_magnitude=.3,
-        smirl_weight=None):
+        smirl_weight=None, 
+        person_type_string="c",
+        points_multiplier=10):
 
         """
         SocialGameEnv for an agent determining incentives in a social game.
@@ -77,6 +76,8 @@ class SocialGameEnv(gym.Env):
         self.hours_in_day = 10
         self.last_smirl_reward = None
         self.last_energy_reward = None
+        self.person_type_string = person_type_string
+        self.points_multiplier=points_multiplier
         print("response type string: ", self.response_type_string)
 
         self.day = 0
@@ -199,7 +200,10 @@ class SocialGameEnv(gym.Env):
         my_baseline_energy = pd.DataFrame(data = {"net_energy_use" : working_hour_energy})
 
         for i in range(self.number_of_participants):
-            player = CurtailAndShiftPerson(my_baseline_energy, points_multiplier = 10, response = 'l')
+            if self.person_type_string=="c":
+                player = CurtailAndShiftPerson(my_baseline_energy, points_multiplier = 10, response = 'l')
+            elif self.person_type_string=="d":
+                player = DeterministicFunctionPerson(my_baseline_energy, response=self.response_type_string, points_multiplier = self.points_multiplier)
             player_dict['player_{}'.format(i)] = player
 
         return player_dict
@@ -406,9 +410,9 @@ class SocialGameEnv(gym.Env):
         if self.use_smirl:
             self.buffer.add(observation)
 
-        # if not self.total_iter % 10:
-        #     print("Iteration: "+str(self.total_iter) + " reward: " + str(reward))
-            #wandb.log({"environment_reward":reward})
+        if not self.total_iter % 10:
+            print("Iteration: "+str(self.total_iter) + " reward: " + str(reward))
+            # wandb.log({"environment_reward":reward})
 
         info = {}
         return observation, reward, done, info
