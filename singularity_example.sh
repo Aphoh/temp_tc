@@ -9,13 +9,13 @@
 #SBATCH --partition=savio2_gpu
 #
 # Number of nodes:
-#SBATCH --nodes=1
+#SBATCH --nodes=2
 #
 # Number of tasks (one for each GPU desired for use case) (example):
-#SBATCH --ntasks=1
+#SBATCH --ntasks=2
 #
 # Processors per task (please always specify the total number of processors twice the number of GPUs):
-#SBATCH --cpus-per-task=2
+#SBATCH --cpus-per-task=4
 #
 #Number of GPUs, this can be in the format of "gpu:[1-4]", or "gpu:K80:[1-4] with the type included
 #SBATCH --gres=gpu:1
