@@ -11,8 +11,6 @@ from gym_microgrid.envs.reward import Reward
 from gym_socialgame.envs.buffers import GaussianBuffer
 import wandb
 
-IPython.embed()
-
 class MicrogridEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
