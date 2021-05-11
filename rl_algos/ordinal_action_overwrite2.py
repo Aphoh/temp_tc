@@ -59,7 +59,6 @@ class OrdinalStochasticSampler(StochasticSampling):
         action_distribution.inputs = torch.tensor(ss_output)
 
         if self.framework == "torch":
-            print("ENTERING TORCH EXPLORATION")
             return self._get_torch_exploration_action(action_distribution,
                                                       timestep, explore)
         else:
