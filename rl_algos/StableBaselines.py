@@ -32,7 +32,7 @@ from ray.tune.integration.wandb import WandbLogger
 
 from ray.rllib.contrib.bandits.agents.lin_ucb import UCB_CONFIG
 from ray.rllib.contrib.bandits.agents.lin_ucb import LinUCBTrainer
-from ordinal_action_overwrite2 import OrdinalStochasticSampler
+from ordinal_action_overwrite2 import (OrdinalStochasticSampler, OrdinalStochasticSamplerGPU)
 
 import IPython
 
@@ -108,11 +108,18 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["lr"] = 0.0002
             config["clip_param"] = 0.3
             config["num_gpus"] =  1
+            if not args.gpu:
+                config["num_gpus"] = 0
             config["num_workers"] = 1
             if args.action_space == "ordinal":
-                config["exploration_config"] = {
-                    "type":OrdinalStochasticSampler
-                }
+                if not args.gpu:
+                    config["exploration_config"] = {
+                        "type":OrdinalStochasticSampler
+                    }
+                else: 
+                    config["exploration_config"] = {
+                        "type":OrdinalStochasticSamplerGPU
+                    }
             print("CONFIG")
             print(config["exploration_config"])
             if args.gym_env == "socialgame":
@@ -581,6 +588,13 @@ def parse_args():
         help="Interval at which to save bulk log information",
         type=int,
         default=100
+    )
+
+    parser.add_argument(
+        "--gpu",
+        help="whether we are requesting GPUs"
+        type=str,
+        default="T"
     )
 
     args = parser.parse_args()
