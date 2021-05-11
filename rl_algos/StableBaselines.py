@@ -107,8 +107,8 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["sgd_minibatch_size"] = 16
             config["lr"] = 0.0002
             config["clip_param"] = 0.3
-            config["num_gpus"] =  1
-            config["num_workers"] = 1
+            config["num_gpus"] =  0
+            config["num_workers"] = 4
             if args.action_space == "ordinal":
                 config["exploration_config"] = {
                     "type":OrdinalStochasticSampler
