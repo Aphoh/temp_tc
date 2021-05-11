@@ -65,3 +65,49 @@ class OrdinalStochasticSampler(StochasticSampling):
             return self._get_tf_exploration_action_op(action_distribution,
                                                       timestep, explore)
 
+
+class OrdinalStochasticSamplerGPU(StochasticSampling):
+    """A modification of the rllib stochastic sampling to allow for ordinal interpretation 
+    of discrete logits
+    
+    This should pair with multi-discrete action environment in base RLLib / gym
+
+    """
+
+
+    @override(StochasticSampling)
+    def get_exploration_action(self,
+                                *,
+                               action_distribution: ActionDistribution,
+                               timestep: Union[int, TensorType],
+                               explore: bool = True):
+
+        logits = action_distribution.inputs.clone().detach()
+        s = expit(logits)
+
+        ss_output = []
+        for ss in s:
+            row = []
+            for i in range(len(ss)):
+                if i == (len(ss)-1):
+                    elem = sum(np.log(ss))
+                else:
+                    elem = sum(np.log(ss[:i+1])) + sum(1-np.log(ss[i+1:]))
+                row.append(elem.item())
+            ss_output.append(row)
+
+        action_distribution.inputs = torch.tensor(ss_output)
+
+        print("--"*10)
+
+        print(action_distribution.inputs)
+
+        print("--"*10)
+        print("--"*10)
+
+        if self.framework == "torch":
+            return self._get_torch_exploration_action(action_distribution,
+                                                      timestep, explore)
+        else:
+            return self._get_tf_exploration_action_op(action_distribution,
+                                                      timestep, explore)
