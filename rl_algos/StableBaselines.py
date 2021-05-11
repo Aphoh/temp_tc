@@ -592,7 +592,7 @@ def parse_args():
 
     parser.add_argument(
         "--gpu",
-        help="whether we are requesting GPUs"
+        help="whether we are requesting GPUs",
         type=str,
         default="T"
     )
