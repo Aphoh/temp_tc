@@ -82,7 +82,7 @@ class OrdinalStochasticSamplerGPU(StochasticSampling):
                                timestep: Union[int, TensorType],
                                explore: bool = True):
 
-        logits = action_distribution.inputs.clone().detach()
+        logits = action_distribution.inputs#.clone().detach()
         s = expit(logits)
 
         ss_output = []
