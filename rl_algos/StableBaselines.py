@@ -587,7 +587,7 @@ def parse_args():
         "--bulk_log_interval",
         help="Interval at which to save bulk log information",
         type=int,
-        default=100
+        default=500
     )
 
     parser.add_argument(
