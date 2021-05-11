@@ -38,13 +38,6 @@ class OrdinalStochasticSampler(StochasticSampling):
         logits = action_distribution.inputs.cpu()
         s = expit(logits)
 
-        print("--"*10)
-
-        print(action_distribution.inputs)
-
-        print("--"*10)
-        print("--"*10)
-
         ss_output = []
         for ss in s:
             row = []
@@ -58,11 +51,17 @@ class OrdinalStochasticSampler(StochasticSampling):
 
         action_distribution.inputs = torch.tensor(ss_output)
 
+        print("--"*10)
+
+        print(action_distribution.inputs)
+
+        print("--"*10)
+        print("--"*10)
+
         if self.framework == "torch":
             return self._get_torch_exploration_action(action_distribution,
                                                       timestep, explore)
         else:
-            print("ENTERING TF EXPLORATION")
             return self._get_tf_exploration_action_op(action_distribution,
                                                       timestep, explore)
 

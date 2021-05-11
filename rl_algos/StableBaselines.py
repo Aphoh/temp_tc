@@ -99,6 +99,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
         ray.init(local_mode=True)
 
         if args.algo=="ppo":
+            print("Entering ppo config setting")
             train_batch_size = 256
             config = ray_ppo.DEFAULT_CONFIG.copy()
             config["framework"] = "torch"
@@ -579,7 +580,7 @@ def parse_args():
         "--bulk_log_interval",
         help="Interval at which to save bulk log information",
         type=int,
-        default=10000
+        default=100
     )
 
     args = parser.parse_args()
