@@ -133,7 +133,6 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             if args.wandb:
                 wandb.save(out_path)
 
-
             if args.gym_env == "socialgame":
                 updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
             elif args.gym_env == "microgrid":
@@ -280,19 +279,22 @@ def get_environment(args):
     # SAC only works in continuous environment
     if args.algo == "sac":
         if args.action_space == "c_norm":
-            action_space_string = "continuous_normalized"
+            args.action_space_string = "continuous_normalized"
         else:
-            action_space_string = "continuous"
+            args.action_space_string = "continuous"
     # For algos (e.g. ppo) which can handle discrete or continuous case
     # Note: PPO typically uses normalized environment (#TODO)
     else:
-        convert_action_space_str = (
-            lambda s: "continuous" if s == "c" else "multidiscrete"
-        )
-        action_space_string = convert_action_space_str(args.action_space)
-
-    if args.action_space=="ordinal":
-        args.action_space_string ="multidiscrete"
+        
+        if args.action_space =="c" or args.action_space =="continuous":
+            args.action_space_string = "continuous"
+        elif args.action_space=="d" or args.action_space =="multidiscrete":
+            args.action_space_string="multidiscrete"
+        elif args.action_space=="ordinal":
+            args.action_space_string ="multidiscrete"
+        else:
+            print("Wrong Action Space string")
+            raise AssertionError 
 
     if args.env_id == "hourly":
         env_id = "_hourly-v0"
@@ -313,7 +315,7 @@ def get_environment(args):
     if args.gym_env == "socialgame":
         gym_env = gym.make(
             "gym_socialgame:socialgame{}".format(env_id),
-            action_space_string=action_space_string,
+            action_space_string=args.action_space_string,
             response_type_string=args.response_type_string,
             one_day=args.one_day,
             number_of_participants=args.number_of_participants,
