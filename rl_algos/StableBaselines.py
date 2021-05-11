@@ -94,7 +94,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     wandb.log(log)
                 else:
                     print(log)
-                if i % args.checkpoint_interval == 0:
+                if args.checkpoint_interval != -1 and i % args.checkpoint_interval == 0:
                     ckpt_dir = "ppo_ckpts/{}{}.ckpt".format(wandb.run.name, i)
                     with open(ckpt_dir, "wb") as ckpt_file:
                         agent_weights = agent.get_policy().get_weights()
@@ -273,7 +273,7 @@ def get_agent(env, args, non_vec_env=None):
     elif args.library=="rllib" or args.library=="tune":
 
         if args.algo == "ppo":
-            train_batch_size = 256
+            train_batch_size = 200
             config = ray_ppo.DEFAULT_CONFIG.copy()
             config["framework"] = "torch"
             config["train_batch_size"] = train_batch_size
@@ -282,6 +282,9 @@ def get_agent(env, args, non_vec_env=None):
             config["clip_param"] = 0.3
             config["num_gpus"] = 0.2
             config["num_workers"] = 1
+            config["output"] = "ppo_output_sim_data"
+            config["output_max_file_size"] = 5000000
+            config["output_compress_columns"] = ["obs", "new_obs", "reward"]
             config["env"] = SocialGameEnvRLLib
             config["callbacks"] = CustomCallbacks
             config["env_config"] = vars(args)
@@ -311,7 +314,7 @@ def get_agent(env, args, non_vec_env=None):
             config["clip_actions"] = True
             config["inner_lr"] = args.maml_inner_lr
             config["lr"] = args.maml_outer_lr
-            config["output"] = "ppo_output_sim_data2"
+            config["output"] = "ppo_output_sim_data"
             config["output_max_file_size"] = 5000000
             config["output_compress_columns"] = ["obs", "new_obs", "reward"]
             config["vf_clip_param"] = args.maml_vf_clip_param
@@ -323,8 +326,8 @@ def get_agent(env, args, non_vec_env=None):
             config["env"] = SocialGameEnvRLLib
             config["env_config"] = vars(args)
             config["framework"]="tf"
-            config["output"] = "sac_output_sim_data"
-            config["output_max_file_size"] = 5000000
+            # config["output"] = "sac_output_sim_data2"
+            # config["output_max_file_size"] = 5000000
             #config["postprocess_inputs"]=True
             config["input"] = {}
             if args.offline_sampling_prop != 0:
@@ -683,7 +686,7 @@ def parse_args():
     )
     parser.add_argument(
         "--checkpoint_interval",
-        help = "How many training iterations between checkpoints",
+        help = "How many training iterations between checkpoints, set to -1 to disable checkpointing",
         type = int,
         default=100
     )

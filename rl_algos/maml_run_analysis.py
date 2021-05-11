@@ -90,13 +90,17 @@ runs = {
         "0.7": "social-game-rl/energy-demand-response-game/3w2w1hc7",
         "0.5": "social-game-rl/energy-demand-response-game/2u49jnb8",
     },
-    "MAML+PPO vs PPO vs SAC": {
-        "MAML+PPO": "social-game-rl/energy-demand-response-game/2g90nma7",
+    "MAML+PPO vs Pretrained SAC": {
         "PPO": "social-game-rl/energy-demand-response-game/14x4i8so",
-        "SAC (0.9 Offline)": "social-game-rl/energy-demand-response-game/2xt3fk7o",
-        "SAC (0.7 Offline)": "social-game-rl/energy-demand-response-game/3w2w1hc7"
+        "MAML+PPO": "social-game-rl/energy-demand-response-game/2g90nma7",
+        "SAC (Vanilla)": "social-game-rl/energy-demand-response-game/1n155f7q",
+        "SAC (Pretrained)": "social-game-rl/energy-demand-response-game/3eo7en6e",
+        
+        #"SAC (0.9 Offline)": "social-game-rl/energy-demand-response-game/2xt3fk7o",
+        #"SAC (0.7 Offline)": "social-game-rl/energy-demand-response-game/3w2w1hc7"
     }
 }
+run_means = {key: {} for key, val in runs.items()}
 plt.rcParams.update({'font.size': 32})
 plt.rcParams['axes.linewidth'] = 3 # set the value globally
 fig, axs = plt.subplots(len(runs.keys()), sharex=True, figsize=(20, 20))
@@ -110,17 +114,26 @@ for i, (name, wandb_ids) in enumerate(runs.items()):
     ax.yaxis.set_major_formatter(StrMethodFormatter('{x:,.1f}')) # 1 decimal place
     for j, (algo, id) in enumerate(wandb_ids.items()):
         if "PPO" in algo:
+            stretch = 20
             means, stes = analyze_run(id, run_length)
-            x = list(range(0, len(means), 10))
+            x = list(range(0, len(means), stretch))
             means = means[:len(x)]
         else:
             means, stes = analyze_offline_runs(id)#analyze_run(id)
             x = list(range(len(means)))
+        if algo == "MAML+PPO":
+            x, ppo_mean = run_means[name]["PPO"]
+            means -= ppo_mean
+        elif algo == "SAC (Pretrained)":
+            x, sac_mean = run_means[name]["SAC (Vanilla)"]
+            means -= sac_mean
+        run_means[name][algo] = (x, means)
         # if len(wandb_ids.keys()) > 2:
         #     ax.errorbar(x, means, yerr = stes, label=algo, linewidth=3.0, color=colors[j])
         # else:
         #     ax.errorbar(x, means, yerr = stes, label=algo, linewidth=3.0)
-        ax.plot(x, means, label=algo, linewidth=3.0)
+        if name != "MAML+PPO vs Pretrained SAC" or (algo == "MAML+PPO" or algo == "SAC (Pretrained)"):
+            ax.plot(x, means, label=algo, linewidth=3.0)
         # Hide the right and top spines
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
@@ -131,4 +144,4 @@ for i, (name, wandb_ids) in enumerate(runs.items()):
 plt.xlabel("Environment Sampled Steps", fontsize=40)
 
 fig.tight_layout()
-plt.savefig("offline_experiments.png")
+plt.savefig("offline_experiments2.png")
