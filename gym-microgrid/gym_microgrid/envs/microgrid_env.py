@@ -2,7 +2,7 @@ import gym
 from gym import spaces
 
 import numpy as np
-import pandas as pd 
+import pandas as pd
 import random
 
 from gym_microgrid.envs.utils import price_signal
@@ -10,24 +10,26 @@ from gym_microgrid.envs.agents import *
 from gym_microgrid.envs.reward import Reward
 from gym_socialgame.envs.buffers import GaussianBuffer
 
-class MicrogridEnv(gym.Env):
-    metadata = {'render.modes': ['human']}
 
-    def __init__(self,
-        action_space_string = "continuous",
-        response_type_string = "l",
-        number_of_participants = 10,
-        one_day = 0,
-        energy_in_state = False,
-        day_of_week = False,
+class MicrogridEnv(gym.Env):
+    metadata = {"render.modes": ["human"]}
+
+    def __init__(
+        self,
+        action_space_string="continuous",
+        response_type_string="l",
+        number_of_participants=10,
+        one_day=0,
+        energy_in_state=False,
+        day_of_week=False,
         pricing_type="TOU",
-        reward_function = "market_solving",
+        reward_function="market_solving",
         manual_tou_magnitude=None,
         complex_batt_pv_scenario=1,
-        exp_name = None,
-        two_price_state = False,
-        smirl_weight=None
-        ):
+        exp_name=None,
+        two_price_state=False,
+        smirl_weight=None,
+    ):
 
         """
         MicrogridEnv for an agent determining incentives in a social game.
@@ -48,7 +50,7 @@ class MicrogridEnv(gym.Env):
         """
         super(MicrogridEnv, self).__init__()
 
-        #Verify that inputs are valid
+        # Verify that inputs are valid
         self.check_valid_init_inputs(
             action_space_string,
             response_type_string,
@@ -57,7 +59,7 @@ class MicrogridEnv(gym.Env):
             energy_in_state,
         )
 
-        #Assigning Instance Variables
+        # Assigning Instance Variables
         self.action_space_string = action_space_string
         self.response_type_string = response_type_string
         self.number_of_participants = number_of_participants
@@ -80,31 +82,33 @@ class MicrogridEnv(gym.Env):
         self.day_of_week = self.days_of_week[self.day % 5]
         self.day_length = 24
 
-        #Create Observation Space (aka State Space)
+        # Create Observation Space (aka State Space)
         self.observation_space = self._create_observation_space()
 
-        self.pricing_type = "real_time_pricing" if pricing_type.upper() == "RTP" else "time_of_use"
+        self.pricing_type = (
+            "real_time_pricing" if pricing_type.upper() == "RTP" else "time_of_use"
+        )
 
         self.buyprices_grid, self.sellprices_grid = self._get_prices()
         # self.prices = self.buyprices_grid #Initialise to buyprices_grid
         self.generation = self._get_generation()
 
-        #Day corresponds to day # of the yr
+        # Day corresponds to day # of the yr
 
-        #Cur_iter counts length of trajectory for current step (i.e. cur_iter = i^th hour in a 10-hour trajectory)
-        #For our case cur_iter just flips between 0-1 (b/c 1-step trajectory)
+        # Cur_iter counts length of trajectory for current step (i.e. cur_iter = i^th hour in a 10-hour trajectory)
+        # For our case cur_iter just flips between 0-1 (b/c 1-step trajectory)
         self.curr_iter = 0
         self.total_iter = 0
 
-        #Create Action Space
-        self.action_length = 72 # TODO: Check with Utkarsha
+        # Create Action Space
+        self.action_length = 72  # TODO: Check with Utkarsha
         self.action_subspace = 3
         self.action_space = self._create_action_space()
 
-        #Create Prosumers
+        # Create Prosumers
         self.prosumer_dict = self._create_agents()
 
-        #TODO: Check initialization of prev_energy
+        # TODO: Check initialization of prev_energy
         self.prev_energy = np.zeros(self.day_length)
 
         if self.use_smirl:
@@ -160,14 +164,15 @@ class MicrogridEnv(gym.Env):
         We pose this option to test whether simplifying the action-space helps the agent.
         """
 
-
-        #Making a symmetric, continuous space to help learning for continuous control (suggested in StableBaselines doc.)
+        # Making a symmetric, continuous space to help learning for continuous control (suggested in StableBaselines doc.)
         if not self.two_price_state:
-            return spaces.Box(low=-1, high=1, shape=(self.day_length,), dtype=np.float32)
-        else: 
-            return spaces.Box(low = -1, high = 1, shape = (2 * self.day_length, ), dtype = np.float32)
-
-        
+            return spaces.Box(
+                low=-1, high=1, shape=(self.day_length,), dtype=np.float32
+            )
+        else:
+            return spaces.Box(
+                low=-1, high=1, shape=(2 * self.day_length,), dtype=np.float32
+            )
 
     def _create_agents(self):
         """
@@ -187,45 +192,51 @@ class MicrogridEnv(gym.Env):
 
         ## large and constant batt and PV
         if self.complex_batt_pv_scenario == 1:
-            battery_nums = [50]*self.number_of_participants
-            pvsizes = [100]*self.number_of_participants
+            battery_nums = [50] * self.number_of_participants
+            pvsizes = [100] * self.number_of_participants
 
         ## small PV sizes
-        elif self.complex_batt_pv_scenario ==2: 
-            pvsizes = [ 0, 10, 100, 10, 0, 0, 0, 55, 10, 10 ]
-            battery_nums = [ 0, 0, 50, 30, 50, 0, 0, 10, 40, 50 ]
+        elif self.complex_batt_pv_scenario == 2:
+            pvsizes = [0, 10, 100, 10, 0, 0, 0, 55, 10, 10]
+            battery_nums = [0, 0, 50, 30, 50, 0, 0, 10, 40, 50]
 
         ## medium PV sizes and different
         elif self.complex_batt_pv_scenario == 3:
-            pvsizes = [ 70, 110, 400, 70, 30, 0, 0, 55, 10, 20 ]
-            battery_nums = [ 0, 0, 150, 30, 50, 0, 0, 100, 40, 150]
+            pvsizes = [70, 110, 400, 70, 30, 0, 0, 55, 10, 20]
+            battery_nums = [0, 0, 150, 30, 50, 0, 0, 100, 40, 150]
 
-        ## no batteries 
+        ## no batteries
         elif self.complex_batt_pv_scenario == 4:
-            pvsizes = [ 70, 110, 400, 70, 30, 0, 0, 55, 10, 20 ]
-            battery_nums = [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ]
-        
-        # no solar 
-        elif self.complex_batt_pv_scenario == 5:
-            pvsizes = [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ]
-            battery_nums = [ 0, 0, 150, 30, 50, 0, 0, 100, 40, 150 ]
-        
-        # nothing at all 
-        elif self.complex_batt_pv_scenario == 6:
-            pvsizes = [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ]
-            battery_nums = [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ]
+            pvsizes = [70, 110, 400, 70, 30, 0, 0, 55, 10, 20]
+            battery_nums = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
-        # wrong number 
+        # no solar
+        elif self.complex_batt_pv_scenario == 5:
+            pvsizes = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            battery_nums = [0, 0, 150, 30, 50, 0, 0, 100, 40, 150]
+
+        # nothing at all
+        elif self.complex_batt_pv_scenario == 6:
+            pvsizes = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            battery_nums = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+        # wrong number
         else:
             print("you've inputted an incorrect scenario")
             raise AssertionError
 
         # Get energy from building_data.csv file,  each office building has readings in kWh. Interpolate to fill missing values
-        df = pd.read_csv('building_data.csv').interpolate().fillna(0)
-        building_names = df.columns[5:] # Skip first few columns 
+        df = pd.read_csv("building_data.csv").interpolate().fillna(0)
+        building_names = df.columns[5:]  # Skip first few columns
         for i in range(len(building_names)):
             name = building_names[i]
-            prosumer = Prosumer(name, np.squeeze(df[[name]].values), .001*np.squeeze(df[['PV (W)']].values), battery_num = battery_nums[i], pv_size = pvsizes[i])
+            prosumer = Prosumer(
+                name,
+                np.squeeze(df[[name]].values),
+                0.001 * np.squeeze(df[["PV (W)"]].values),
+                battery_num=battery_nums[i],
+                pv_size=pvsizes[i],
+            )
             prosumer_dict[name] = prosumer
 
         return prosumer_dict
@@ -244,12 +255,12 @@ class MicrogridEnv(gym.Env):
 
         # Read renewable generation from CSV file. Index starts at 5 am on Jan 1, make appropriate adjustments. For year 2012: it is a leap year
         # generation = pd.read_csv('/Users/utkarshapets/Documents/Research/Optimisation attempts/building_data.csv')[['PV (W)']]
-        generation = np.squeeze(pd.read_csv('building_data.csv')[['PV (W)']].values)
+        generation = np.squeeze(pd.read_csv("building_data.csv")[["PV (W)"]].values)
         for day in range(0, 365):
             yearlonggeneration.append(
-                generation[day*self.day_length+19 : day*self.day_length+19+24]
+                generation[day * self.day_length + 19 : day * self.day_length + 19 + 24]
             )
-               
+
         return np.array(yearlonggeneration)
 
     def _get_prices(self):
@@ -267,14 +278,17 @@ class MicrogridEnv(gym.Env):
         buy_prices = []
         sell_prices = []
 
-
         # Read PG&E price from CSV file. Index starts at 5 am on Jan 1, make appropriate adjustments. For year 2012: it is a leap year
         # price = pd.read_csv('/Users/utkarshapets/Documents/Research/Optimisation attempts/building_data.csv')[['Price( $ per kWh)']]
-        price = np.squeeze(pd.read_csv('building_data.csv')[['Price( $ per kWh)']].values)
+        price = np.squeeze(
+            pd.read_csv("building_data.csv")[["Price( $ per kWh)"]].values
+        )
 
         for day in range(0, 365):
-            buyprice = price[day*self.day_length+19 : day*self.day_length+19+24]
-            sellprice = 0.6*buyprice
+            buyprice = price[
+                day * self.day_length + 19 : day * self.day_length + 19 + 24
+            ]
+            sellprice = 0.6 * buyprice
             buy_prices.append(buyprice)
             sell_prices.append(sellprice)
 
@@ -289,30 +303,35 @@ class MicrogridEnv(gym.Env):
 
         Returns: Price: 24-dim vector of transactive prices
         """
-        
-        # Continuous space is symmetric [-1,1], we map to -> [sellprice_grid,buyprice_grid] 
+
+        # Continuous space is symmetric [-1,1], we map to -> [sellprice_grid,buyprice_grid]
         day = self.day
         buyprice_grid = self.buyprices_grid[day]
         sellprice_grid = self.sellprices_grid[day]
-        
+
         # -1 -> sellprice. 1 -> buyprice
 
         if not self.two_price_state:
-            midpoint_price = (buyprice_grid + sellprice_grid)/2
+            midpoint_price = (buyprice_grid + sellprice_grid) / 2
             diff_grid = buyprice_grid - sellprice_grid
-            scaled_diffs = np.multiply(action, diff_grid)/2 # Scale to fit difference at each hour
+            scaled_diffs = (
+                np.multiply(action, diff_grid) / 2
+            )  # Scale to fit difference at each hour
             price = scaled_diffs + midpoint_price
             return price
 
         else:
-            midpoint_price = (buyprice_grid + sellprice_grid)/2
+            midpoint_price = (buyprice_grid + sellprice_grid) / 2
             diff_grid = buyprice_grid - sellprice_grid
-            scaled_diffs_bp = np.multiply(action[0:24], diff_grid)/2 # Scale to fit difference at each hour
-            scaled_diffs_sp = np.multiply(action[24:], diff_grid)/2 # Scale to fit difference at each hour
+            scaled_diffs_bp = (
+                np.multiply(action[0:24], diff_grid) / 2
+            )  # Scale to fit difference at each hour
+            scaled_diffs_sp = (
+                np.multiply(action[24:], diff_grid) / 2
+            )  # Scale to fit difference at each hour
             buyprice = scaled_diffs_bp + midpoint_price
             sellprice = scaled_diffs_sp + midpoint_price
             return buyprice, sellprice
-
 
     def _simulate_humans(self, day, price):
         """
@@ -332,16 +351,15 @@ class MicrogridEnv(gym.Env):
 
         for prosumer_name in self.prosumer_dict:
 
-            #Get players response to agent's actions
+            # Get players response to agent's actions
             prosumer = self.prosumer_dict[prosumer_name]
             prosumer_demand = prosumer.get_response(day, price)
-  
-            #Calculate energy consumption by prosumer and in total (entire aggregation)
+
+            # Calculate energy consumption by prosumer and in total (entire aggregation)
             energy_consumptions[prosumer_name] = prosumer_demand
             total_consumption += prosumer_demand
 
-
-        energy_consumptions["Total"] = total_consumption 
+        energy_consumptions["Total"] = total_consumption
         return energy_consumptions
 
     def _simulate_prosumers_twoprices(self, day, buyprice, sellprice):
@@ -361,20 +379,21 @@ class MicrogridEnv(gym.Env):
         total_consumption = np.zeros(24)
 
         for prosumer_name in self.prosumer_dict:
-            
-            #Get players response to agent's actions
+
+            # Get players response to agent's actions
             prosumer = self.prosumer_dict[prosumer_name]
             prosumer_demand = prosumer.get_response_twoprices(day, buyprice, sellprice)
-  
-            #Calculate energy consumption by prosumer and in total (entire aggregation)
+
+            # Calculate energy consumption by prosumer and in total (entire aggregation)
             energy_consumptions[prosumer_name] = prosumer_demand
             total_consumption += prosumer_demand
 
-
-        energy_consumptions["Total"] = total_consumption 
+        energy_consumptions["Total"] = total_consumption
         return energy_consumptions
 
-    def _get_reward(self, buyprice_grid, sellprice_grid, transactive_price, energy_consumptions):
+    def _get_reward(
+        self, buyprice_grid, sellprice_grid, transactive_price, energy_consumptions
+    ):
         """
         Purpose: Compute reward given grid prices, transactive price set ahead of time, and energy consumption of the participants
 
@@ -388,19 +407,20 @@ class MicrogridEnv(gym.Env):
             Reward for RL agent (- |net money flow|): in order to get close to market equilibrium
         """
 
-        total_consumption = energy_consumptions['Total']
-        money_to_utility = np.dot(np.maximum(0, total_consumption), buyprice_grid) + np.dot(np.minimum(0, total_consumption), sellprice_grid)
+        total_consumption = energy_consumptions["Total"]
+        money_to_utility = np.dot(
+            np.maximum(0, total_consumption), buyprice_grid
+        ) + np.dot(np.minimum(0, total_consumption), sellprice_grid)
         money_from_prosumers = np.dot(total_consumption, transactive_price)
 
         total_energy_reward = 0
         total_smirl_reward = 0
 
         if self.reward_function == "market_solving":
-            total_energy_reward = - abs(money_from_prosumers - money_to_utility)
-        elif self.reward_function =="profit_maximizing":
+            total_energy_reward = -abs(money_from_prosumers - money_to_utility)
+        elif self.reward_function == "profit_maximizing":
             total_energy_reward = money_from_prosumers - money_to_utility
 
-        
         if self.use_smirl:
             smirl_rew = self.buffer.logprob(self._get_observation())
             total_smirl_reward = self.smirl_weight * np.clip(smirl_rew, -300, 300)
@@ -410,7 +430,14 @@ class MicrogridEnv(gym.Env):
 
         return total_energy_reward + total_smirl_reward
 
-    def _get_reward_twoprices(self, buyprice_grid, sellprice_grid, transactive_buyprice, transactive_sellprice, energy_consumptions):
+    def _get_reward_twoprices(
+        self,
+        buyprice_grid,
+        sellprice_grid,
+        transactive_buyprice,
+        transactive_sellprice,
+        energy_consumptions,
+    ):
         """
         Purpose: Compute reward given grid prices, transactive price set ahead of time, and energy consumption of the participants
 
@@ -425,22 +452,26 @@ class MicrogridEnv(gym.Env):
             Reward for RL agent (- |net money flow|): in order to get close to market equilibrium
         """
 
-        total_consumption = energy_consumptions['Total']
-        money_to_utility = np.dot(np.maximum(0, total_consumption), buyprice_grid) + np.dot(np.minimum(0, total_consumption), sellprice_grid)
+        total_consumption = energy_consumptions["Total"]
+        money_to_utility = np.dot(
+            np.maximum(0, total_consumption), buyprice_grid
+        ) + np.dot(np.minimum(0, total_consumption), sellprice_grid)
 
         money_from_prosumers = 0
         for prosumerName in energy_consumptions:
-            money_from_prosumers += (np.dot(np.maximum(0, energy_consumptions[prosumerName]), transactive_buyprice) + np.dot(np.minimum(0, energy_consumptions[prosumerName]), transactive_sellprice))
+            money_from_prosumers += np.dot(
+                np.maximum(0, energy_consumptions[prosumerName]), transactive_buyprice
+            ) + np.dot(
+                np.minimum(0, energy_consumptions[prosumerName]), transactive_sellprice
+            )
 
         total_reward = None
         if self.reward_function == "market_solving":
-            total_reward = - abs(money_from_prosumers - money_to_utility)
-        elif self.reward_function =="profit_maximizing":
+            total_reward = -abs(money_from_prosumers - money_to_utility)
+        elif self.reward_function == "profit_maximizing":
             total_reward = money_from_prosumers - money_to_utility
 
         return total_reward
-
-
 
     def step(self, action):
         """
@@ -463,7 +494,7 @@ class MicrogridEnv(gym.Env):
 
         if not self.action_space.contains(action):
             action = np.asarray(action)
-            if self.action_space_string == 'continuous':
+            if self.action_space_string == "continuous":
                 action = np.clip(action, -1, 1)
                 # TODO: ask Lucas about this
             else:
@@ -471,7 +502,7 @@ class MicrogridEnv(gym.Env):
                 raise AssertionError
 
         # prev_price = self.prices[(self.day)]
-        self.day = (self.day + 1) % 365 
+        self.day = (self.day + 1) % 365
         self.curr_iter += 1
         self.total_iter += 1
 
@@ -481,35 +512,38 @@ class MicrogridEnv(gym.Env):
             price = self._price_from_action(action)
             self.price = price
 
-            energy_consumptions = self._simulate_humans(day = self.day, price = price)
+            energy_consumptions = self._simulate_humans(day=self.day, price=price)
             self.prev_energy = energy_consumptions["Total"]
 
             observation = self._get_observation()
-        
+
             buyprice_grid = self.buyprices_grid[self.day]
             sellprice_grid = self.sellprices_grid[self.day]
-            reward = self._get_reward(buyprice_grid, sellprice_grid, price, energy_consumptions)
+            reward = self._get_reward(
+                buyprice_grid, sellprice_grid, price, energy_consumptions
+            )
 
             self.iteration += 1
 
-        else: 
+        else:
 
             buyprice, sellprice = self._price_from_action(action)
             # self.price = price
 
             energy_consumptions = self._simulate_prosumers_twoprices(
-                day = self.day, 
-                buyprice = buyprice, 
-                sellprice = sellprice)
+                day=self.day, buyprice=buyprice, sellprice=sellprice
+            )
 
             self.prev_energy = energy_consumptions["Total"]
 
             observation = self._get_observation()
-        
+
             buyprice_grid = self.buyprices_grid[self.day]
             sellprice_grid = self.sellprices_grid[self.day]
-            reward = self._get_reward_twoprices(buyprice_grid, sellprice_grid, buyprice, sellprice, energy_consumptions)
-            
+            reward = self._get_reward_twoprices(
+                buyprice_grid, sellprice_grid, buyprice, sellprice, energy_consumptions
+            )
+
             self.iteration += 1
 
         if self.use_smirl:
@@ -519,33 +553,43 @@ class MicrogridEnv(gym.Env):
         return observation, reward, done, info
 
     def _get_observation(self):
-    
-        prev_energy = self.prev_energy
-        generation_tomorrow = self.generation[(self.day + 1)%365] 
-        buyprice_grid_tomorrow = self.buyprices_grid[(self.day + 1)%365] 
 
-        noise = np.random.normal(loc = 0, scale = 50, size = 24) ## TODO: get rid of this if not doing well
-        generation_tomorrow_nonzero = (generation_tomorrow > abs(noise)) # when is generation non zero?
-        generation_tomorrow += generation_tomorrow_nonzero* noise # Add in Gaussian noise when gen in non zero
+        prev_energy = self.prev_energy
+        generation_tomorrow = self.generation[(self.day + 1) % 365]
+        buyprice_grid_tomorrow = self.buyprices_grid[(self.day + 1) % 365]
+
+        noise = np.random.normal(
+            loc=0, scale=50, size=24
+        )  ## TODO: get rid of this if not doing well
+        generation_tomorrow_nonzero = generation_tomorrow > abs(
+            noise
+        )  # when is generation non zero?
+        generation_tomorrow += (
+            generation_tomorrow_nonzero * noise
+        )  # Add in Gaussian noise when gen in non zero
 
         return np.concatenate(
             (prev_energy, generation_tomorrow, buyprice_grid_tomorrow)
-            )
-        
+        )
 
     def reset(self):
         """ Resets the environment on the current day """
         return self._get_observation()
 
-    def render(self, mode='human'):
+    def render(self, mode="human"):
         pass
 
     def close(self):
         pass
 
-
-    def check_valid_init_inputs(self, action_space_string: str, response_type_string: str, number_of_participants = 10,
-                one_day = False, energy_in_state = False):
+    def check_valid_init_inputs(
+        self,
+        action_space_string: str,
+        response_type_string: str,
+        number_of_participants=10,
+        one_day=False,
+        energy_in_state=False,
+    ):
 
         """
         Purpose: Verify that all initialization variables are valid
@@ -565,30 +609,72 @@ class MicrogridEnv(gym.Env):
             Raises AssertionError if any of {one_day, energy_in_state, yesterday_in_state} is not a Boolean
         """
 
-        #Checking that action_space_string is valid
-        assert isinstance(action_space_string, str), "action_space_str is not of type String. Instead got type {}".format(type(action_space_string))
+        # Checking that action_space_string is valid
+        assert isinstance(
+            action_space_string, str
+        ), "action_space_str is not of type String. Instead got type {}".format(
+            type(action_space_string)
+        )
         action_space_string = action_space_string.lower()
-        assert action_space_string in ["continuous", "multidiscrete", "continuous_normalized"], "action_space_str is not continuous or discrete. Instead got value {}".format(action_space_string)
+        assert action_space_string in [
+            "continuous",
+            "multidiscrete",
+            "continuous_normalized",
+        ], "action_space_str is not continuous or discrete. Instead got value {}".format(
+            action_space_string
+        )
 
-        #Checking that response_type_string is valid
-        assert isinstance(response_type_string, str), "Variable response_type_string should be of type String. Instead got type {}".format(type(response_type_string))
+        # Checking that response_type_string is valid
+        assert isinstance(
+            response_type_string, str
+        ), "Variable response_type_string should be of type String. Instead got type {}".format(
+            type(response_type_string)
+        )
         response_type_string = response_type_string.lower()
-        assert response_type_string in ["t", "s", "l"], "Variable response_type_string should be either t, s, l. Instead got value {}".format(response_type_string)
+        assert response_type_string in [
+            "t",
+            "s",
+            "l",
+        ], "Variable response_type_string should be either t, s, l. Instead got value {}".format(
+            response_type_string
+        )
 
+        # Checking that number_of_participants is valid
+        assert isinstance(
+            number_of_participants, int
+        ), "Variable number_of_participants is not of type Integer. Instead got type {}".format(
+            type(number_of_participants)
+        )
+        assert (
+            number_of_participants > 0
+        ), "Variable number_of_participants should be atleast 1, got number_of_participants = {}".format(
+            number_of_participants
+        )
+        assert (
+            number_of_participants <= 20
+        ), "Variable number_of_participants should not be greater than 20, got number_of_participants = {}".format(
+            number_of_participants
+        )
 
-        #Checking that number_of_participants is valid
-        assert isinstance(number_of_participants, int), "Variable number_of_participants is not of type Integer. Instead got type {}".format(type(number_of_participants))
-        assert number_of_participants > 0, "Variable number_of_participants should be atleast 1, got number_of_participants = {}".format(number_of_participants)
-        assert number_of_participants <= 20, "Variable number_of_participants should not be greater than 20, got number_of_participants = {}".format(number_of_participants)
+        # Checking that one_day is valid
+        assert isinstance(
+            one_day, int
+        ), "Variable one_day is not of type Int. Instead got type {}".format(
+            type(one_day)
+        )
+        assert (
+            366 > one_day and one_day > -2
+        ), "Variable one_day out of range [-1,365]. Got one_day = {}".format(one_day)
 
-        #Checking that one_day is valid
-        assert isinstance(one_day, int), "Variable one_day is not of type Int. Instead got type {}".format(type(one_day))
-        assert 366 > one_day and one_day > -2, "Variable one_day out of range [-1,365]. Got one_day = {}".format(one_day)
-
-        #Checking that energy_in_state is valid
-        assert isinstance(energy_in_state, bool), "Variable one_day is not of type Boolean. Instead got type {}".format(type(energy_in_state))
+        # Checking that energy_in_state is valid
+        assert isinstance(
+            energy_in_state, bool
+        ), "Variable one_day is not of type Boolean. Instead got type {}".format(
+            type(energy_in_state)
+        )
 
         print("all inputs valid")
+
 
 class MicrogridEnvRLLib(MicrogridEnv):
     """ 
@@ -596,18 +682,19 @@ class MicrogridEnvRLLib(MicrogridEnv):
     two_price_state and complex_batt_pv are specific params for the MicrogridEnv
     and differs from SocialGame. 
     """
+
     def __init__(self, env_config):
         super().__init__(
-            action_space_string = env_config["action_space_string"], 
-            response_type_string = env_config["response_type_string"],
-            number_of_participants = env_config["number_of_participants"],
-            one_day = env_config["one_day"],
-            energy_in_state = env_config["energy_in_state"],
+            action_space_string=env_config["action_space_string"],
+            response_type_string=env_config["response_type_string"],
+            number_of_participants=env_config["number_of_participants"],
+            one_day=env_config["one_day"],
+            energy_in_state=env_config["energy_in_state"],
             pricing_type=env_config["pricing_type"],
-            reward_function = env_config["reward_function"],
+            reward_function=env_config["reward_function"],
             manual_tou_magnitude=env_config["manual_tou_magnitude"],
-            smirl_weight=env_config["smirl_weight"], 
-            complex_batt_pv_scenario=1, 
-            two_price_state = False,
+            smirl_weight=env_config["smirl_weight"],
+            complex_batt_pv_scenario=1,
+            two_price_state=False,
         )
         print("Initialized RLLib child class for MicrogridEnv.")
