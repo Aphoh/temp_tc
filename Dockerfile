@@ -17,6 +17,9 @@ RUN pip install -r ./requirements.txt
 COPY ./gym-socialgame/ ./gym-socialgame/
 RUN pip install -e ./gym-socialgame/ 
 
+COPY ./gym-microgrid/ ./gym-microgrid/
+RUN pip install -e ./gym-microgrid/ 
+
 ENV TUNE_RESULT_DIR=/home/$UNAME/logs
 
 USER $UNAME
