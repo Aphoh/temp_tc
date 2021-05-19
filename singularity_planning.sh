@@ -6,7 +6,7 @@
 #SBATCH --account=fc_ntugame
 #
 # Partition:
-#SBATCH --partition=savio2_gpu
+#SBATCH --partition=savio2
 #
 # Number of nodes:
 #SBATCH --nodes=1
