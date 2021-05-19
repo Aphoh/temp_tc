@@ -6,7 +6,7 @@
 #SBATCH --account=fc_ntugame
 #
 # Partition:
-#SBATCH --partition=savio2_gpu
+#SBATCH --partition=savio2
 #
 # Number of nodes:
 #SBATCH --nodes=1
@@ -21,6 +21,6 @@
 #SBATCH --gres=gpu:1
 #
 # Wall clock limit (2hrs):
-#SBATCH --time=04:00:00
+#SBATCH --time=01:00:00
 
 singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME library://aphoh/default/sg-k80-env:v1 sh -c './singularity_preamble.sh && ./planning_run.sh'
