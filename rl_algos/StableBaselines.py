@@ -32,9 +32,10 @@ from ray.tune.integration.wandb import WandbLogger
 
 from ray.rllib.contrib.bandits.agents.lin_ucb import UCB_CONFIG
 from ray.rllib.contrib.bandits.agents.lin_ucb import LinUCBTrainer
-
+import pickle
+from ray.rllib.utils.framework import try_import_tf, get_variable
 import IPython
-
+tf1, tf, tfv = try_import_tf()
 def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
     """
     Purpose: Train agent in env, and then call eval function to evaluate policy
@@ -104,7 +105,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["framework"] = "torch"
             config["train_batch_size"] = train_batch_size
             config["sgd_minibatch_size"] = 16
-            config["lr"] = 0.0002
+            config["lr"] = 0.1
             config["clip_param"] = 0.3
             config["num_gpus"] =  1
             config["num_workers"] = 1
@@ -138,6 +139,40 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             elif args.gym_env == "planning":
                 updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLibPlanning, logger_creator=logger_creator)
 
+            if args.checkpoint:
+                old_weights = updated_agent.get_policy().get_weights()
+                with open(args.checkpoint, "rb") as ckpt_file:
+                    ckpt_weights = pickle.load(ckpt_file)
+                torch_ckpt_weights = {}
+                torch_ckpt_weights["_hidden_layers.0._model.0.weight"] = ckpt_weights["fc_1/kernel"].T
+                torch_ckpt_weights["_hidden_layers.0._model.0.bias"] = ckpt_weights["fc_1/bias"]
+                torch_ckpt_weights["_hidden_layers.1._model.0.weight"] = ckpt_weights["fc_2/kernel"].T
+                torch_ckpt_weights["_hidden_layers.1._model.0.bias"] = ckpt_weights["fc_2/bias"]
+                torch_ckpt_weights["_logits._model.0.weight"] = ckpt_weights["fc_out/kernel"].T
+                torch_ckpt_weights["_logits._model.0.bias"] = ckpt_weights["fc_out/bias"]
+                torch_ckpt_weights["_value_branch_separate.0._model.0.weight"] = ckpt_weights["fc_value_1/kernel"].T
+                torch_ckpt_weights["_value_branch_separate.0._model.0.bias"] = ckpt_weights["fc_value_1/bias"]
+                torch_ckpt_weights["_value_branch_separate.1._model.0.weight"] = ckpt_weights["fc_value_2/kernel"].T
+                torch_ckpt_weights["_value_branch_separate.1._model.0.bias"] = ckpt_weights["fc_value_2/bias"]
+                torch_ckpt_weights["_value_branch._model.0.weight"] = ckpt_weights["value_out/kernel"].T
+                torch_ckpt_weights["_value_branch._model.0.bias"] = ckpt_weights["value_out/bias"]
+                
+                updated_agent.get_policy().set_weights(torch_ckpt_weights)
+                new_weights = updated_agent.get_policy().get_weights()
+                assert not np.array_equal(old_weights, new_weights)
+
+            
+            def set_kl(w):
+                def set_kl_policy(policy, pid):
+
+                    policy.kl_coeff = get_variable(
+                    float(policy.kl_coeff),
+                    tf_name="kl_coeff",
+                    trainable=False,
+                    framework="tf1")
+                w.foreach_policy(set_kl_policy)
+            updated_agent.workers.foreach_worker(set_kl)
+            #updated_agent.set_policy(policy)
             to_log = ["episode_reward_mean"]
             timesteps_total = 0
             while timesteps_total < num_steps:
@@ -589,6 +624,12 @@ def parse_args():
         type=int,
         default=10000
     )
+    parser.add_argument(
+        "--checkpoint",
+        help="Path to get a checkpoint file to load in",
+        type=str,
+        default=None
+        )
 
     args = parser.parse_args()
 
