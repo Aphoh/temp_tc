@@ -259,8 +259,6 @@ def args_convert_bool(args):
         args.energy_in_state = utils.string2bool(args.energy_in_state)
     if not isinstance(args.price_in_state, (bool)):
         args.price_in_state = utils.string2bool(args.price_in_state)
-    if not isinstance(args.test_planning_env, (bool)):
-        args.test_planning_env = utils.string2bool(args.test_planning_env)
     if not isinstance(args.bin_observation_space, (bool)):
         args.bin_observation_space = utils.string2bool(args.bin_observation_space)
 
@@ -523,13 +521,6 @@ def parse_args():
         type=str,
         choices=["TOU", "RTP"],
         default="TOU",
-    )
-    parser.add_argument(
-        "--test_planning_env",
-        help="flag if you want to test vanilla planning",
-        type=str,
-        default='F',
-        choices=['T', 'F'],
     )
     parser.add_argument(
         "--reward_function",
