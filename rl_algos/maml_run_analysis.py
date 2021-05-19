@@ -97,7 +97,7 @@ runs = {
         "SAC (Pretrained)": "social-game-rl/energy-demand-response-game/3eo7en6e",
         
         #"SAC (0.9 Offline)": "social-game-rl/energy-demand-response-game/2xt3fk7o",
-        #"SAC (0.7 Offline)": "social-game-rl/energy-demand-response-game/3w2w1hc7"
+        "SAC (0.7 Offline)": "social-game-rl/energy-demand-response-game/1e8lchdj"
     }
 }
 run_means = {key: {} for key, val in runs.items()}
@@ -121,10 +121,10 @@ for i, (name, wandb_ids) in enumerate(runs.items()):
         else:
             means, stes = analyze_offline_runs(id)#analyze_run(id)
             x = list(range(len(means)))
-        if algo == "MAML+PPO":
+        if "PPO" in algo and algo != "PPO":
             x, ppo_mean = run_means[name]["PPO"]
             means -= ppo_mean
-        elif algo == "SAC (Pretrained)":
+        elif "SAC" in algo and algo != "SAC (Vanilla)":
             x, sac_mean = run_means[name]["SAC (Vanilla)"]
             means -= sac_mean
         run_means[name][algo] = (x, means)
@@ -132,7 +132,7 @@ for i, (name, wandb_ids) in enumerate(runs.items()):
         #     ax.errorbar(x, means, yerr = stes, label=algo, linewidth=3.0, color=colors[j])
         # else:
         #     ax.errorbar(x, means, yerr = stes, label=algo, linewidth=3.0)
-        if name != "MAML+PPO vs Pretrained SAC" or (algo == "MAML+PPO" or algo == "SAC (Pretrained)"):
+        if name != "MAML+PPO vs Pretrained SAC" or (algo != "PPO" and algo != "SAC (Vanilla)"):
             ax.plot(x, means, label=algo, linewidth=3.0)
         # Hide the right and top spines
         ax.spines['right'].set_visible(False)
