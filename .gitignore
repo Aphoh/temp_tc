@@ -242,7 +242,3 @@ wandb/
 
 ray_results/
 .viminfo
-
-*_run.sh
-
-.dvc

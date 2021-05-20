@@ -58,35 +58,35 @@ class CustomCallbacks(DefaultCallbacks):
         self.log_vals["step"].append(step_i)
 
         # TODO: Implement logging for planning_env 
-        if socialgame_env.planning_steps > 0: 
-            if socialgame_env.is_step_in_real:
-                if socialgame_env.use_smirl and socialgame_env.last_smirl_reward:
-                    smirl_rew = socialgame_env.last_smirl_reward
-                    episode.user_data["smirl_reward"].append(smirl_rew)
-                    episode.hist_data["smirl_reward"].append(smirl_rew)
-                    self.log_vals["smirl_reward"].append(smirl_rew)
-                else:
-                    self.log_vals["smirl_reward"].append(np.nan)
+        # if socialgame_env.planning_steps > 0: 
+        #     if socialgame_env.is_step_in_real:
+        #         if socialgame_env.use_smirl and socialgame_env.last_smirl_reward:
+        #             smirl_rew = socialgame_env.last_smirl_reward
+        #             episode.user_data["smirl_reward"].append(smirl_rew)
+        #             episode.hist_data["smirl_reward"].append(smirl_rew)
+        #             self.log_vals["smirl_reward"].append(smirl_rew)
+        #         else:
+        #             self.log_vals["smirl_reward"].append(np.nan)
 
-                if socialgame_env.last_energy_reward:
-                    energy_rew = socialgame_env.last_energy_reward
-                    episode.user_data["energy_reward"].append(energy_rew)
-                    episode.hist_data["energy_reward"].append(energy_rew)
-                    self.log_vals["energy_reward"].append(energy_rew)
-                else:
-                    self.log_vals["energy_reward"].append(np.nan)
+        #         if socialgame_env.last_energy_reward:
+        #             energy_rew = socialgame_env.last_energy_reward
+        #             episode.user_data["energy_reward"].append(energy_rew)
+        #             episode.hist_data["energy_reward"].append(energy_rew)
+        #             self.log_vals["energy_reward"].append(energy_rew)
+        #         else:
+        #             self.log_vals["energy_reward"].append(np.nan)
 
-                obs = socialgame_env._get_observation()
-                if obs is not None:
-                    for i, k in enumerate(obs.flatten()):
-                        self.log_vals["observation_" + str(i)].append(k)
-                else:
-                    for i in range(obs_dim):
-                        self.log_vals["observation_" + str(i)].append(np.nan)
+        #         obs = socialgame_env._get_observation()
+        #         if obs is not None:
+        #             for i, k in enumerate(obs.flatten()):
+        #                 self.log_vals["observation_" + str(i)].append(k)
+        #         else:
+        #             for i in range(obs_dim):
+        #                 self.log_vals["observation_" + str(i)].append(np.nan)
 
-                self.steps_since_save += 1
-                if self.steps_since_save == self.save_interval:
-                    self.save()
+        #         self.steps_since_save += 1
+        #         if self.steps_since_save == self.save_interval:
+        #             self.save()
 
         return
 
