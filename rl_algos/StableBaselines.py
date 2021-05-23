@@ -17,7 +17,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.env_checker import check_env
 
 import gym_socialgame.envs.utils as env_utils
-from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv)
+from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv, SocialGameEnvRLLibPlanning)
 
 import gym_microgrid.envs.utils as env_utils
 from gym_microgrid.envs.microgrid_env import MicrogridEnvRLLib
@@ -30,8 +30,12 @@ from ray.tune.integration.wandb import (wandb_mixin, WandbLoggerCallback)
 from ray.tune.logger import (DEFAULT_LOGGERS, pretty_print, UnifiedLogger)
 from ray.tune.integration.wandb import WandbLogger
 
-import pdb
-
+from ray.rllib.contrib.bandits.agents.lin_ucb import UCB_CONFIG
+from ray.rllib.contrib.bandits.agents.lin_ucb import LinUCBTrainer
+import pickle
+from ray.rllib.utils.framework import try_import_tf, get_variable
+import IPython
+tf1, tf, tfv = try_import_tf()
 def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
     """
     Purpose: Train agent in env, and then call eval function to evaluate policy
@@ -77,6 +81,20 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             analysis = tune.run(**exp_dict)
             analysis.results_df.to_csv("POC results.csv")
 
+        elif args.algo=="uc_bandit":
+            config = UCB_CONFIG
+            config["env"] = SocialGameEnvRLLib
+            config["env_config"] = vars(args)
+
+            analysis = tune.run(
+                "contrib/LinUCB",
+                config = config,
+                stop = {"training_iteration":20},
+                num_samples = 5
+            )
+
+            IPython.embed()
+
     elif library=="rllib":
 
         ray.init(local_mode=True)
@@ -87,7 +105,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["framework"] = "torch"
             config["train_batch_size"] = train_batch_size
             config["sgd_minibatch_size"] = 16
-            config["lr"] = 0.0002
+            config["lr"] = 0.1
             config["clip_param"] = 0.3
             config["num_gpus"] =  1
             config["num_workers"] = 1
@@ -98,6 +116,10 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             elif args.gym_env == "microgrid":
                 config["env"] = MicrogridEnvRLLib
                 obs_dim = 72 * np.sum([args.energy_in_state, args.price_in_state])
+            elif args.gym_env == "planning":
+                config["env"] = SocialGameEnvRLLibPlanning
+                obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
+                
 
             out_path = os.path.join(args.log_path, "bulk_data.h5")
             callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim)
@@ -114,7 +136,43 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
             elif args.gym_env == "microgrid":
                 updated_agent = ray_ppo.PPOTrainer(config=config, env=MicrogridEnvRLLib, logger_creator=logger_creator)
+            elif args.gym_env == "planning":
+                updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLibPlanning, logger_creator=logger_creator)
 
+            if args.checkpoint:
+                old_weights = updated_agent.get_policy().get_weights()
+                with open(args.checkpoint, "rb") as ckpt_file:
+                    ckpt_weights = pickle.load(ckpt_file)
+                torch_ckpt_weights = {}
+                torch_ckpt_weights["_hidden_layers.0._model.0.weight"] = ckpt_weights["fc_1/kernel"].T
+                torch_ckpt_weights["_hidden_layers.0._model.0.bias"] = ckpt_weights["fc_1/bias"]
+                torch_ckpt_weights["_hidden_layers.1._model.0.weight"] = ckpt_weights["fc_2/kernel"].T
+                torch_ckpt_weights["_hidden_layers.1._model.0.bias"] = ckpt_weights["fc_2/bias"]
+                torch_ckpt_weights["_logits._model.0.weight"] = ckpt_weights["fc_out/kernel"].T
+                torch_ckpt_weights["_logits._model.0.bias"] = ckpt_weights["fc_out/bias"]
+                torch_ckpt_weights["_value_branch_separate.0._model.0.weight"] = ckpt_weights["fc_value_1/kernel"].T
+                torch_ckpt_weights["_value_branch_separate.0._model.0.bias"] = ckpt_weights["fc_value_1/bias"]
+                torch_ckpt_weights["_value_branch_separate.1._model.0.weight"] = ckpt_weights["fc_value_2/kernel"].T
+                torch_ckpt_weights["_value_branch_separate.1._model.0.bias"] = ckpt_weights["fc_value_2/bias"]
+                torch_ckpt_weights["_value_branch._model.0.weight"] = ckpt_weights["value_out/kernel"].T
+                torch_ckpt_weights["_value_branch._model.0.bias"] = ckpt_weights["value_out/bias"]
+                
+                updated_agent.get_policy().set_weights(torch_ckpt_weights)
+                new_weights = updated_agent.get_policy().get_weights()
+                assert not np.array_equal(old_weights, new_weights)
+
+            
+            def set_kl(w):
+                def set_kl_policy(policy, pid):
+
+                    policy.kl_coeff = get_variable(
+                    float(policy.kl_coeff),
+                    tf_name="kl_coeff",
+                    trainable=False,
+                    framework="tf1")
+                w.foreach_policy(set_kl_policy)
+            updated_agent.workers.foreach_worker(set_kl)
+            #updated_agent.set_policy(policy)
             to_log = ["episode_reward_mean"]
             timesteps_total = 0
             while timesteps_total < num_steps:
@@ -148,6 +206,25 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     wandb.log({"total_loss": result["info"]["learner"]["default_policy"]["total_loss"]})
                 else:
                     print(log)
+
+        # Trying bandit without tuning 
+        elif args.algo=="uc_bandit":
+            config = UCB_CONFIG
+            config["env"] = SocialGameEnvRLLib
+            config["env_config"] = vars(args)
+            updated_agent = LinUCBTrainer(
+                config = config
+            )
+    
+            for i in range(num_steps):
+                result = updated_agent.train()
+                mean_reward = np.mean(result["hist_stats"]["episode_reward"])
+                if args.wandb:
+                    wandb.log({"episode_reward_mean" : mean_reward})
+                else:
+                    print(mean_reward)
+
+
 
 def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
     """
@@ -217,8 +294,6 @@ def args_convert_bool(args):
         args.energy_in_state = utils.string2bool(args.energy_in_state)
     if not isinstance(args.price_in_state, (bool)):
         args.price_in_state = utils.string2bool(args.price_in_state)
-    if not isinstance(args.test_planning_env, (bool)):
-        args.test_planning_env = utils.string2bool(args.test_planning_env)
     if not isinstance(args.bin_observation_space, (bool)):
         args.bin_observation_space = utils.string2bool(args.bin_observation_space)
 
@@ -293,6 +368,20 @@ def get_environment(args):
             smirl_weight=args.smirl_weight # NOTE: Complex Batt PV and two price state default values used
         )
 
+    elif args.gym_env == "planning":
+        gym_env = gym.make(
+            "gym_microgrid:socialgame{}".format(env_id),
+            action_space_string=action_space_string,
+            response_type_string=args.response_type_string,
+            one_day=args.one_day,
+            number_of_participants=args.number_of_participants,
+            energy_in_state=args.energy_in_state,
+            pricing_type=args.pricing_type,
+            reward_function=reward_function,
+            manual_tou_magnitude=args.manual_tou_magnitude,
+            smirl_weight=args.smirl_weight 
+        )
+
     # Check to make sure any new changes to environment follow OpenAI Gym API
     check_env(gym_env)
     return gym_env
@@ -352,7 +441,7 @@ def parse_args():
         "--gym_env", 
         help="Which Gym Environment you wihs to use",
         type=str,
-        choices=["socialgame", "microgrid"],
+        choices=["socialgame", "microgrid", "planning"],
         default="socialgame"
     )
     parser.add_argument(
@@ -360,7 +449,7 @@ def parse_args():
         help="RL Algorithm",
         type=str,
         default="sac",
-        choices=["sac", "ppo", "maml"]
+        choices=["sac", "ppo", "maml", "uc_bandit"]
     )
     parser.add_argument(
         "--base_log_dir",
@@ -452,7 +541,7 @@ def parse_args():
         help="How many planning iterations to partake in",
         type=int,
         default=0,
-        choices=[i for i in range(0, 100)],
+        choices=[i for i in range(0, 1000)],
     )
     parser.add_argument(
         "--planning_model",
@@ -467,13 +556,6 @@ def parse_args():
         type=str,
         choices=["TOU", "RTP"],
         default="TOU",
-    )
-    parser.add_argument(
-        "--test_planning_env",
-        help="flag if you want to test vanilla planning",
-        type=str,
-        default='F',
-        choices=['T', 'F'],
     )
     parser.add_argument(
         "--reward_function",
@@ -533,6 +615,12 @@ def parse_args():
         type=int,
         default=10000
     )
+    parser.add_argument(
+        "--checkpoint",
+        help="Path to get a checkpoint file to load in",
+        type=str,
+        default=None
+        )
 
     args = parser.parse_args()
 
@@ -557,22 +645,25 @@ def main():
         wandb.config.update(args)
 
     # Create environments
-
-    env = get_environment(
-        args,
-    )
-
-    # if you need to modify to bring in non vectorized env, you need to modify function returns
-    vec_env = vectorize_environment(
-        env,
-        args,
+    if args.library == "sb3":
+        env = get_environment(
+            args,
         )
 
-    print("Got vectorized environment, getting agent")
+        # if you need to modify to bring in non vectorized env, you need to modify function returns
+        vec_env = vectorize_environment(
+            env,
+            args,
+            )
 
-    # Create Agent
-    model = get_agent(vec_env, args, non_vec_env=None)
-    print("Got agent")
+        print("Got vectorized environment, getting agent")
+
+        # Create Agent
+        model = get_agent(vec_env, args, non_vec_env=None)
+        print("Got agent")
+
+    else:
+        model = get_agent(env=None, args = args, non_vec_env=None)
 
     # Train algo, (logging through Tensorboard)
     print("Beginning Testing!")

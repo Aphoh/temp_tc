@@ -1,0 +1,402 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 30,
+   "id": "927e5466-a9c4-419b-b938-66faaecc27dc",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import numpy as np\n",
+    "\n",
+    "import torch\n",
+    "import torch.nn as nn\n",
+    "import torch.nn.functional as F\n",
+    "import torch.optim as optim"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "id": "a32a09b0-449e-499f-a6b9-e6c019a8ff75",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "\n",
+    "class Person():\n",
+    "\t\"\"\" Person (parent?) class -- will define how the person takes in a points signal and puts out an energy signal \n",
+    "\tbaseline_energy = a list or dataframe of values. This is data from SinBerBEST \n",
+    "\tpoints_multiplier = an int which describes how sensitive each person is to points \n",
+    "\n",
+    "\t\"\"\"\n",
+    "\n",
+    "\tdef __init__(self, baseline_energy_df, points_multiplier = 1):\n",
+    "\t\tself.baseline_energy_df = baseline_energy_df\n",
+    "\t\tself.baseline_energy = np.array(self.baseline_energy_df[\"net_energy_use\"])\n",
+    "\t\tself.points_multiplier = points_multiplier\n",
+    "\t\t\n",
+    "\t\tbaseline_min = self.baseline_energy.min()\n",
+    "\t\tbaseline_max = self.baseline_energy.max()\n",
+    "\t\tbaseline_range = baseline_max - baseline_min\n",
+    "\t\t\n",
+    "\t\tself.min_demand = np.maximum(0, baseline_min + baseline_range * .05)\n",
+    "\t\tself.max_demand = np.maximum(0, baseline_min + baseline_range * .95)\n",
+    "\n",
+    "\n",
+    "\tdef energy_output_simple_linear(self, points):\n",
+    "\t\t\"\"\"Determines the energy output of the person, based on the formula:\n",
+    "\t\t\n",
+    "\t\ty[n] = -sum_{rolling window of 5} points + baseline_energy + noise\n",
+    "\n",
+    "\t\tinputs: points - list or dataframe of points values. Assumes that the \n",
+    "\t\tlist will be in the same time increment that energy_output will be. \n",
+    "\n",
+    "\t\tFor now, that's in 1 hour increments\n",
+    "\n",
+    "\t\t\"\"\"\n",
+    "\t\tpoints_df = pd.DataFrame(points)\n",
+    "\t\t\n",
+    "\t\tpoints_effect = (\n",
+    "\t\t\tpoints_df\n",
+    "\t\t\t\t.rolling(\n",
+    "\t\t\t\t\t\twindow = 5,\n",
+    "\t\t\t\t\t\tmin_periods = 1)\n",
+    "\t\t\t\t.mean()\n",
+    "\t\t\t)\n",
+    "\n",
+    "\n",
+    "\n",
+    "\t\ttime = points_effect.shape[0]\n",
+    "\t\tenergy_output= []\n",
+    "\n",
+    "\t\tfor t in range(time):\n",
+    "\t\t\ttemp_energy = self.baseline_energy[t] - points_effect.iloc[t]*self.points_multiplier + \\\n",
+    "\t\t\t\tnp.random.normal(1)\n",
+    "\t\t\tenergy_output.append(temp_energy)\n",
+    "\t\t\t\n",
+    "\t\treturn pd.DataFrame(energy_output)\n",
+    "\n",
+    "\tdef pure_linear_signal(self, points, baseline_day=0):\n",
+    "\t\t\"\"\"\n",
+    "\t\tA linear person. The more points you give them, the less energy they will use\n",
+    "\t\t(within some bounds) for each hour. No rolling effects or anything. The simplest\n",
+    "\t\tsignal. \n",
+    "\t\t\"\"\"\n",
+    "\n",
+    "\t\t# hack here to always grab the first day from the baseline_energy\n",
+    "\t\toutput = np.array(self.baseline_energy)[baseline_day*24:baseline_day*24+10]\n",
+    "\n",
+    "\t\tpoints_effect = np.array(points * self.points_multiplier)\n",
+    "\t\toutput = output - points_effect\n",
+    "\n",
+    "\t\t# impose bounds/constraints\n",
+    "\t\toutput = np.maximum(output, self.min_demand)\n",
+    "\t\toutput = np.minimum(output, self.max_demand)\n",
+    "\t\treturn output\n",
+    "\n",
+    "\n",
+    "\n",
+    "\tdef get_min_demand(self):\n",
+    "\t\treturn self.min_demand\n",
+    "\t\t# return np.quantile(self.baseline_energy, .05)\n",
+    "\n",
+    "\tdef get_max_demand(self):\n",
+    "\t\treturn self.max_demand\n",
+    "\t\t# return np.quantile(self.baseline_energy, .95)\n",
+    "\n",
+    "class FixedDemandPerson(Person):\n",
+    "\n",
+    "\tdef __init__(self, baseline_energy_df, points_multiplier = 1):\n",
+    "\t\tsuper().__init__(baseline_energy_df, points_multiplier)\n",
+    "\n",
+    "\n",
+    "\tdef demand_from_points(self, points, baseline_day=0):\n",
+    "\t\t# hack here to always grab the first day from the baseline_energy\n",
+    "\t\toutput = np.array(self.baseline_energy)[baseline_day*24:baseline_day*24+10]\n",
+    "\t\ttotal_demand = np.sum(output)\n",
+    "\n",
+    "\n",
+    "\t\tpoints_effect = np.array(points * self.points_multiplier)\n",
+    "\t\toutput = output - points_effect\n",
+    "\n",
+    "\t\t# scale to keep total_demand (almost) constant\n",
+    "\t\t# almost bc imposing bounds afterwards\n",
+    "\t\toutput = output * (total_demand/np.sum(output))\n",
+    "\n",
+    "\t\t# impose bounds/constraints\n",
+    "\t\toutput = np.maximum(output, self.min_demand)\n",
+    "\t\toutput = np.minimum(output, self.max_demand)\n",
+    "\n",
+    "\t\treturn output\n",
+    "\n",
+    "\tdef adverserial_linear(self, points, baseline_day=0):\n",
+    "\t\t# hack here to always grab the first day from the baseline_energy\n",
+    "\t\toutput = np.array(self.baseline_energy)[baseline_day*24:baseline_day*24+10]\n",
+    "\t\ttotal_demand = np.sum(output)\n",
+    "\n",
+    "\n",
+    "\t\tpoints_effect = np.array(points * self.points_multiplier)\n",
+    "\t\toutput = output + points_effect\n",
+    "\n",
+    "\t\t# scale to keep total_demand (almost) constant\n",
+    "\t\t# almost bc imposing bounds afterwards\n",
+    "\t\toutput = output * (total_demand/np.sum(output))\n",
+    "\n",
+    "\t\t# impose bounds/constraints\n",
+    "\t\toutput = np.maximum(output, self.min_demand)\n",
+    "\t\toutput = np.minimum(output, self.max_demand)\n",
+    "\n",
+    "\t\treturn output"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 38,
+   "id": "c4e0120a-50a7-4bc1-8cce-4791d69d15f1",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "class CurtailAndShiftPerson(Person):\n",
+    "\tdef __init__(self, baseline_energy_df, points_multiplier = 1, shiftable_load_frac = .7, \n",
+    "\t\t\tcurtailable_load_frac = .4, shiftByHours = 3, maxCurtailHours=5, response = None, **kwargs):\n",
+    "\t\tsuper().__init__(baseline_energy_df, points_multiplier)\n",
+    "\t\tself.shiftableLoadFraction = shiftable_load_frac\n",
+    "\t\tself.shiftByHours = shiftByHours\n",
+    "\t\tself.curtailableLoadFraction = curtailable_load_frac\n",
+    "\t\tself.maxCurtailHours = maxCurtailHours #Person willing to curtail for no more than these hours\n",
+    "\n",
+    "\tdef shiftedLoad(self, points, baseline_day=0, day_of_week=None):\n",
+    "\t\toutput = np.array(self.baseline_energy)[baseline_day*24:baseline_day*24+10]\n",
+    "\t\tpoints = np.array(points) * self.points_multiplier\n",
+    "\t\tshiftableLoad = self.shiftableLoadFraction*output\n",
+    "\t\tshiftByHours = self.shiftByHours\n",
+    "\t\t\n",
+    "\t\t# 10 hour day. Rearrange the sum of shiftableLoad into these hours by treating points as the 'price' at that hour\n",
+    "\t\t# Load can be shifted by a max of shiftByHours (default = 3 hours)\n",
+    "\t\t# For each hour, calculate the optimal hour to shift load to within +- 3 hours\n",
+    "\t\tshiftedLoad = np.zeros(10)\n",
+    "\t\tfor hour in range(10):\n",
+    "\t\t\tcandidatePrices = points[max(hour-shiftByHours,0): min(hour+shiftByHours,9)+1]\n",
+    "\t\t\tshiftToHour = max(hour-shiftByHours,0) + np.argmin(candidatePrices)\n",
+    "\t\t\tshiftedLoad[shiftToHour] += shiftableLoad[hour]\t\t\n",
+    "\t\treturn shiftedLoad\n",
+    "\n",
+    "\tdef curtailedLoad(self, points, baseline_day=0, day_of_week=None):\n",
+    "\t\toutput = np.array(self.baseline_energy)[baseline_day*24:baseline_day*24+10]\n",
+    "\t\tpoints = np.array(points) * self.points_multiplier\n",
+    "\t\tcurtailableLoad = self.curtailableLoadFraction*output\n",
+    "\t\tmaxPriceHours = np.argsort(points)[0:self.maxCurtailHours]\n",
+    "\t\tfor hour in maxPriceHours:\n",
+    "\t\t\tcurtailableLoad[hour] = 0\n",
+    "\t\treturn curtailableLoad\n",
+    "\n",
+    "\tdef get_response(self, points, day_of_week=None):\n",
+    "\t\tbaseline_day = 0\n",
+    "\t\toutput = np.array(self.baseline_energy)[baseline_day*24:baseline_day*24+10]\n",
+    "\t\tenergy_resp = output*(1 - self.curtailableLoadFraction - self.shiftableLoadFraction) + self.curtailedLoad(points) + self.shiftedLoad(points)\n",
+    "\t\t\n",
+    "\t\t\t\n",
+    "\t\tself.min_demand = np.maximum(0, min(energy_resp))\n",
+    "\t\tself.max_demand = np.maximum(0, max(energy_resp))\n",
+    "\n",
+    "\t\treturn energy_resp\n",
+    "\n",
+    "\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 42,
+   "id": "cc7073fe-2b76-4326-9c4d-62eb21e261df",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "a = {\"net_energy_use\":[15.09,  35.6, 123.5,  148.7,  158.49, 149.13, 159.32, 157.62, 158.8,  156.49]}"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 43,
+   "id": "74415cec-1e6b-4573-9218-8e9b9d1007d2",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "bob = CurtailAndShiftPerson(baseline_energy_df=a)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 46,
+   "id": "bb9ebe92-0029-4934-90bd-331cc98a9168",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "output_data = []\n",
+    "\n",
+    "square_waves = np.array([[0,0,0,0,0,0,0,0,1,0],\n",
+    "                        [0,0,0,0,0,0,0,0,1,0],\n",
+    "                        [1,0,0,0,0,0,0,0,0,0],\n",
+    "                        [1,0,0,0,0,0,0,0,0,0],\n",
+    "                        [0,1,0,0,0,0,0,0,0,0],\n",
+    "                        [0,1,0,0,0,0,0,0,0,0],\n",
+    "                        [0,0,1,0,0,0,0,0,0,1],\n",
+    "                        [0,0,1,0,0,0,0,0,0,1],\n",
+    "                        [0,0,0,1,0,0,0,0,0,0],\n",
+    "                        [0,0,0,1,0,0,0,0,0,0]])\n",
+    "\n",
+    "\n",
+    "for day in range(square_waves.shape[1]):\n",
+    "    output_data.append(bob.get_response(square_waves[:, day]))\n",
+    "    \n",
+    "output_data=np.array(output_data)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 40,
+   "id": "2ed95f24-a9cc-4709-b1f7-97fd3e944ba7",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([0, 0, 0, 0, 1, 1, 0, 0, 0, 0])"
+      ]
+     },
+     "execution_count": 40,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "square_waves[:, 1]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 48,
+   "id": "96532235-be85-4399-952b-b526db2a587b",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from sklearn.preprocessing import MinMaxScaler\n",
+    "\n",
+    "scaler = MinMaxScaler(feature_range=(-1, 1))\n",
+    "train_data_normalized = scaler.fit_transform(output_data.reshape(-1, 1))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 52,
+   "id": "1da3a3b6-5502-4070-8db9-4ab5c2501342",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "output_data_normalized = train_data_normalized.reshape(10,10)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 61,
+   "id": "a4eeb2fe-13c1-4265-bef1-22a09ad77797",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "class Net(torch.nn.Module):\n",
+    "    def __init__(self, n_feature, n_hidden, n_output):\n",
+    "        super(Net, self).__init__()\n",
+    "        self.hidden = torch.nn.Linear(n_feature, n_hidden)  \n",
+    "        self.predict = torch.nn.Linear(n_hidden, n_output)  \n",
+    "\n",
+    "    def forward(self, x):\n",
+    "        x = F.relu(self.hidden(x))      \n",
+    "        x = self.predict(x)             \n",
+    "        return x"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 62,
+   "id": "6018c9bb-215d-4470-a302-6a7647f50eec",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Net(\n",
+      "  (hidden): Linear(in_features=1, out_features=10, bias=True)\n",
+      "  (predict): Linear(in_features=10, out_features=1, bias=True)\n",
+      ")\n"
+     ]
+    }
+   ],
+   "source": [
+    "net = Net(n_feature=10, n_hidden=10, n_output=10)     # define the network\n",
+    "print(net)  # net architecture\n",
+    "optimizer = torch.optim.SGD(net.parameters(), lr=0.2)\n",
+    "loss_func = torch.nn.MSELoss() \n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 113,
+   "id": "3750e989-9d15-4981-b526-0c9a1207b9d1",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "\n",
+    "# train the network\n",
+    "for t in range(200):\n",
+    "    loss = 0\n",
+    "    for i in range(square_waves.shape[1]):\n",
+    "        prediction = net(torch.tensor(square_waves[:,i].reshape(-1,1)).type(torch.FloatTensor))   \n",
+    "        loss +=  loss_func(prediction, torch.tensor(output_data_normalized[:,i].reshape(-1,1)).type(torch.FloatTensor))     # must be (1. nn output, 2. target)\n",
+    "    optimizer.zero_grad()   # clear gradients for next train\n",
+    "    loss.backward()         # backpropagation, compute gradients\n",
+    "    optimizer.step()     \n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 114,
+   "id": "f8db9e9b-230c-4cb6-a5c4-bf7c35b755fb",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "torch.save(net.state_dict(), 'model_weights.pth')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "4482dbc7-e8e9-44e8-89c1-9bf7b7d56d16",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.0b4"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
