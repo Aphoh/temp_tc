@@ -1,0 +1,2 @@
+python StableBaselines.py -w --num_steps=1000 --exp_name=sac_offline.1.0 --algo=sac --library=rllib --offline_sampling_prop=1.0 --offline_data_path=ppo_output_sim_data --checkpoint_interval=50
+python StableBaselines.py -w --num_steps=1000 --exp_name=sac_offline.0.0 --algo=sac --library=rllib --offline_sampling_prop=0.0  --checkpoint_interval=50
