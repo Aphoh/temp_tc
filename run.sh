@@ -7,4 +7,4 @@ WORKDIR=/home/$UNAME
 docker run \
     -p 5000:5000 \
     -v "$(pwd)/database:/app/database" \
-    tc-temp
+    lucasspangher/social_game_api_image:latesp
