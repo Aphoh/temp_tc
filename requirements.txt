@@ -8,3 +8,5 @@ tensorflow-probability==0.11.1
 ray[rllib,tune]==1.2.0
 higher==0.2.1
 GPUtil==1.4.0
+pandas==1.1.5
+tables==3.6.1

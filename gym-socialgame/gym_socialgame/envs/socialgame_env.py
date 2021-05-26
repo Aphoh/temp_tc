@@ -7,8 +7,8 @@ import random
 from gym_socialgame.envs.utils import price_signal
 from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
-from gym_socialgame.envs.buffers import GaussianBuffer
 import wandb
+from gym_socialgame.envs.buffers import (GaussianBuffer, GaussianCircularBuffer)
 
 class SocialGameEnv(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -25,9 +25,10 @@ class SocialGameEnv(gym.Env):
         reward_function = "log_cost_regularized",
         bin_observation_space=False,
         manual_tou_magnitude=.3,
-        smirl_weight=None, 
         person_type_string="c",
-        points_multiplier=10):
+        points_multiplier=10,
+        smirl_weight=None,
+        circ_buffer_size=None):
 
         """
         SocialGameEnv for an agent determining incentives in a social game.
@@ -72,7 +73,6 @@ class SocialGameEnv(gym.Env):
         self.bin_observation_space = bin_observation_space
         self.manual_tou_magnitude = manual_tou_magnitude
         self.smirl_weight = smirl_weight
-        self.use_smirl = smirl_weight > 0 if smirl_weight else False
         self.hours_in_day = 10
         self.last_smirl_reward = None
         self.last_energy_reward = None
@@ -95,6 +95,7 @@ class SocialGameEnv(gym.Env):
 
         #Cur_iter counts length of trajectory for current step (i.e. cur_iter = i^th hour in a 10-hour trajectory)
         #For our case cur_iter just flips between 0-1 (b/c 1-step trajectory)
+        #TODO: this above comment ^ is wrong
         self.curr_iter = 0
         self.total_iter = 0
 
@@ -110,8 +111,14 @@ class SocialGameEnv(gym.Env):
         #TODO: Check initialization of prev_energy
         self.prev_energy = np.zeros(10)
 
+        self.use_smirl = smirl_weight > 0 if smirl_weight else False
         if self.use_smirl:
-            self.buffer = GaussianBuffer(self.action_length)
+            if circ_buffer_size and circ_buffer_size > 0:
+                print("Using circular gaussian buffer")
+                self.buffer = GaussianCircularBuffer(self.action_length, circ_buffer_size)
+            else:
+                print("Using standard gaussian buffer")
+                self.buffer = GaussianBuffer(self.action_length)
 
 
         print("\n Social Game Environment Initialized! Have Fun! \n")
@@ -506,7 +513,8 @@ class SocialGameEnvRLLib(SocialGameEnv):
             reward_function = env_config["reward_function"],
             bin_observation_space=env_config["bin_observation_space"],
             manual_tou_magnitude=env_config["manual_tou_magnitude"],
-            smirl_weight=env_config["smirl_weight"]
+            smirl_weight=env_config["smirl_weight"],
+            circ_buffer_size=env_config["circ_buffer_size"]
         )
         print("Initialized RLLib child class")
 
@@ -618,3 +626,97 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
             player_dict['player_{}'.format(i)] = player
 
         return player_dict
+
+
+class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
+    def __init__(self, env_config):
+        self.planning_steps = env_config["planning_steps"]
+        self.is_step_in_real=True
+        super().__init__(
+            env_config=env_config,
+        )
+        
+    def _simulate_humans_planning_model(self, action):
+        """
+        Purpose: A planning model to wrap simulate_humans. 
+
+        Args:
+            Action: 10-dim vector corresponding to action for each hour 
+
+        Returns:
+            Energy_consumption: Dictionary containing the energy usage by player and the average energy 
+        """
+
+        energy_consumptions = {}
+        total_consumption = np.zeros(10)
+
+        for player_name in self.player_dict:
+            #Get players response to agent's actions
+            player = self.player_dict[player_name]
+
+            player_energy = 86 + (5 * (action - 5)) ## need to change this baseline model
+
+            #Calculate energy consumption by player and in total (over the office)
+            energy_consumptions[player_name] = player_energy
+            total_consumption += player_energy
+
+        energy_consumptions["avg"] = total_consumption / self.number_of_participants
+        return energy_consumptions
+
+    def step(self, action):
+        """
+        Purpose: Takes a step in the environment
+
+        Args:
+            Action: 10-dim vector detailing player incentive for each hour (8AM - 5PM)
+
+        Returns:
+            Observation: State for the next day
+            Reward: Reward for said action
+            Done: Whether or not the day is done (should always be True b/c of 1-step trajectory)
+            Info: Other info (primarily for gym env based library compatibility)
+
+        Exceptions:
+            raises AssertionError if action is not in the action space
+        """
+        self.action = action
+
+        if not self.action_space.contains(action):
+            print("made it within the if statement in SG_E that tests if the action space doesn't have the action")
+            action = np.asarray(action)
+            if self.action_space_string == 'continuous':
+                action = np.clip(action, -1, 1) #TODO: check if correct
+
+            elif self.action_space_string == 'multidiscrete':
+                action = np.clip(action, 0, self.action_subspace - 1)
+
+        prev_price = self.prices[(self.day)]
+        self.day = (self.day + 1) % 365
+        self.curr_iter += 1
+        self.total_iter +=1
+
+        done = self.curr_iter > 0
+
+        points = self._points_from_action(action)
+
+        if not self.total_iter % (1 + self.planning_steps):
+            # take a step in real
+            self.is_step_in_real = True
+            energy_consumptions = self._simulate_humans(points)
+        else: 
+            # take a step in planning
+            self.is_step_in_real = False
+            energy_consumptions = self._simulate_humans_planning_model(points)
+
+        # HACK ALERT. USING AVG ENERGY CONSUMPTION FOR STATE SPACE. this will not work if people are not all the same
+
+        self.prev_energy = energy_consumptions["avg"]
+
+        observation = self._get_observation()
+        reward = self._get_reward(prev_price, energy_consumptions, reward_function = self.reward_function)
+
+        if self.use_smirl:
+            self.buffer.add(observation)
+
+        info = {}
+        return observation, reward, done, info

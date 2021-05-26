@@ -392,8 +392,11 @@ class MicrogridEnv(gym.Env):
         money_to_utility = np.dot(np.maximum(0, total_consumption), buyprice_grid) + np.dot(np.minimum(0, total_consumption), sellprice_grid)
         money_from_prosumers = np.dot(total_consumption, transactive_price)
 
+<<<<<<< HEAD
         net_exports = np.minimum(0, total_consumption) + np.maximum(0,total_consumption)
 
+=======
+>>>>>>> origin/main
         total_energy_reward = 0
         total_smirl_reward = 0
 
