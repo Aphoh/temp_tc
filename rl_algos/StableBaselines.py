@@ -105,7 +105,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["framework"] = "torch"
             config["train_batch_size"] = train_batch_size
             config["sgd_minibatch_size"] = 16
-            config["lr"] = 0.1
+            config["lr"] = 0.001
             config["clip_param"] = 0.3
             config["num_gpus"] =  1
             config["num_workers"] = 1
@@ -161,18 +161,6 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 new_weights = updated_agent.get_policy().get_weights()
                 assert not np.array_equal(old_weights, new_weights)
 
-            
-            def set_kl(w):
-                def set_kl_policy(policy, pid):
-
-                    policy.kl_coeff = get_variable(
-                    float(policy.kl_coeff),
-                    tf_name="kl_coeff",
-                    trainable=False,
-                    framework="tf1")
-                w.foreach_policy(set_kl_policy)
-            updated_agent.workers.foreach_worker(set_kl)
-            #updated_agent.set_policy(policy)
             to_log = ["episode_reward_mean"]
             timesteps_total = 0
             while timesteps_total < num_steps:
@@ -621,7 +609,12 @@ def parse_args():
         type=str,
         default=None
         )
-
+    parser.add_argument(
+        "--tag",
+        help="Tag to mark run for wandb",
+        type=str,
+        default=None
+    )
     args = parser.parse_args()
 
     args.log_path = os.path.join(os.path.abspath(args.base_log_dir), "{}_{}".format(args.exp_name, str(dt.datetime.today())))
@@ -640,7 +633,10 @@ def main():
     args_convert_bool(args)
 
     if args.wandb:
-        wandb.init(project="energy-demand-response-game", entity="social-game-rl")
+        tags = None
+        if args.tag:
+            tags = [args.tag]
+        wandb.init(project="energy-demand-response-game", entity="social-game-rl", tags=tags)
         wandb.tensorboard.patch(root_logdir=args.log_path) # patching the logdir directly seems to work
         wandb.config.update(args)
 

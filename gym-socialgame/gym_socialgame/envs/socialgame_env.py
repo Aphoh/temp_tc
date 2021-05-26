@@ -73,6 +73,7 @@ class SocialGameEnv(gym.Env):
         self.hours_in_day = 10
         self.last_smirl_reward = None
         self.last_energy_reward = None
+        self.last_energy_cost = None
 
         self.day = 0
         self.days_of_week = [0, 1, 2, 3, 4]
@@ -323,6 +324,7 @@ class SocialGameEnv(gym.Env):
 
         total_energy_reward = 0
         total_smirl_reward = 0
+        total_energy_cost = 0
         for player_name in energy_consumptions:
             if player_name != "avg":
                 # get the points output from players
@@ -332,6 +334,7 @@ class SocialGameEnv(gym.Env):
                 player_min_demand = player.get_min_demand()
                 player_max_demand = player.get_max_demand()
                 player_energy = energy_consumptions[player_name]
+                player_energy_cost = np.dot(player_energy, price)
                 player_reward = Reward(player_energy, price, player_min_demand, player_max_demand)
                 if reward_function == "scaled_cost_distance":
                    player_ideal_demands = player_reward.ideal_use_calculation()
@@ -348,6 +351,7 @@ class SocialGameEnv(gym.Env):
                     raise AssertionError
 
                 total_energy_reward += reward
+                total_energy_cost += player_energy_cost
 
         total_energy_reward = total_energy_reward / self.number_of_participants
 
@@ -357,7 +361,7 @@ class SocialGameEnv(gym.Env):
 
         self.last_smirl_reward = total_smirl_reward
         self.last_energy_reward = total_energy_reward
-
+        self.last_energy_cost = 500 * (total_energy_cost / self.number_of_participants) # 500 hardcoded for now
         return total_energy_reward + total_smirl_reward
 
     def step(self, action):
