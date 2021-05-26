@@ -360,7 +360,7 @@ class SocialGameEnv(gym.Env):
 
         self.last_smirl_reward = total_smirl_reward
         self.last_energy_reward = total_energy_reward
-        self.last_energy_cost = 500 * (total_energy_cost / self.number_of_participants) # 500 hardcoded for now
+        self.last_energy_cost = 500 * (total_energy_cost / self.number_of_participants) * 0.001 # 500 hardcoded for now
         return total_energy_reward + total_smirl_reward
 
     def step(self, action):
