@@ -352,7 +352,6 @@ class SocialGameEnv(gym.Env):
 
                 total_energy_reward += reward
                 total_energy_cost += player_energy_cost
-
         total_energy_reward = total_energy_reward / self.number_of_participants
 
         if self.use_smirl:

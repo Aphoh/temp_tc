@@ -145,7 +145,6 @@ class CustomCallbacks(DefaultCallbacks):
         socialgame_env = base_env.get_unwrapped()[0]
         episode.custom_metrics["energy_reward"] = np.mean(episode.user_data["energy_reward"])
         episode.custom_metrics["energy_cost"] = np.mean(episode.user_data["energy_cost"])
-
         if socialgame_env.use_smirl:
             episode.custom_metrics["smirl_reward"] = np.mean(episode.user_data["smirl_reward"])
 

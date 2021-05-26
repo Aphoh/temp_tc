@@ -100,12 +100,13 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
         ray.init(local_mode=True)
 
         if args.algo=="ppo":
-            train_batch_size = 256
+            train_batch_size = 33
             config = ray_ppo.DEFAULT_CONFIG.copy()
             config["framework"] = "torch"
             config["train_batch_size"] = train_batch_size
             config["sgd_minibatch_size"] = 16
             config["lr"] = 0.001
+            config["num_sgd_iter"] = 90
             config["clip_param"] = 0.3
             config["num_gpus"] =  1
             config["num_workers"] = 1
