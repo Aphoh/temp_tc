@@ -1,5 +1,6 @@
 #!/bin/sh
 # pip install --user --upgrade pip
-pip install -r ./requirements.txt
-pip install -e ./gym-socialgame/
-pip install -e ./gym-microgrid/
+
+python -m pip install -r ./requirements.txt
+python -m pip install -e ./gym-socialgame/
+python -m pip install -e ./gym-microgrid/
