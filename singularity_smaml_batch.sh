@@ -39,4 +39,4 @@ rm -rf $LDIR
 mkdir -p $LDIR
 
 singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME --bind "$LDIR:$HOME/.local" --env SMIRL_VAL=$SMIRL_VAL library://aphoh/default/sg-k80-env:v1 \
-  sh -c './singularity_preamble.sh && ./batch_elt_run.sh $SMIRL_VAL $LOGDIR_BASE'
+  sh -c './singularity_preamble.sh && ./batch_final_run.sh $SMIRL_VAL $LOGDIR_BASE'
