@@ -118,8 +118,8 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     wandb.log(log)
                 else:
                     print(log)
-                if args.checkpoint_interval != -1 and i % args.checkpoint_interval == 0:
-                    ckpt_dir = "ppo_ckpts/{}{}.ckpt".format(wandb.run.name, i)
+                if args.checkpoint_interval != -1 and timesteps_total % args.checkpoint_interval == 0:
+                    ckpt_dir = "ppo_ckpts/{}{}.ckpt".format(wandb.run.name, timesteps_total)
                     with open(ckpt_dir, "wb") as ckpt_file:
                         agent_weights = agent.get_policy().get_weights()
                         pickle.dump(agent_weights, ckpt_file)
