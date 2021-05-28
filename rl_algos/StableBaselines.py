@@ -387,7 +387,9 @@ def get_agent(env, args, non_vec_env=None):
             config["num_gpus"] = 1
             config["num_envs_per_worker"] = 2
             config["num_workers"] = args.maml_num_workers
-            
+            config["train_batch_size"] = 16
+            config["rollout_fragment_length"]=32 
+            #num_envs_per_worker * num_workers * rollout_fragment_length = total number of steps sampled from env per PPO step
             config["inner_adaptation_steps"] = args.maml_inner_adaptation_steps
             config["maml_optimizer_steps"] = args.maml_optimizer_steps
             config["env"] = SocialGameMetaEnv
@@ -397,8 +399,8 @@ def get_agent(env, args, non_vec_env=None):
             config["clip_actions"] = True
             config["inner_lr"] = args.maml_inner_lr
             config["lr"] = args.maml_outer_lr
-            config["output"] = "ppo_output_sim_data"
-            config["output_max_file_size"] = 5000000
+            #config["output"] = "ppo_output_sim_data"
+            #config["output_max_file_size"] = 5000000
             config["output_compress_columns"] = ["obs", "new_obs", "reward"]
             config["vf_clip_param"] = args.maml_vf_clip_param
             trainer = ray_maml.MAMLTrainer(config=config, env=SocialGameMetaEnv)
@@ -906,6 +908,7 @@ def main():
         print("Got agent")
 
     else:
+        ray.init()
         print("Got vectorized environment, getting agent")
         validation_mode = args.validate_checkpoint or args.validate_baseline
         weights = None
