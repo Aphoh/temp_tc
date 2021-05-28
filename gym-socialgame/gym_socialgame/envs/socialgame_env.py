@@ -537,7 +537,7 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
         if self.mode == "train":
             print("SAMPLING TRAIN ENVIRONMENT")
             person_type = np.random.choice([DeterministicFunctionPerson], size = (n_tasks, ))
-            points_multiplier = np.random.choice(range(10, 20), size = (n_tasks, ))
+            points_multiplier = [10 for i in range(n_tasks)]
             response = np.random.choice(['s', 'l', 't'], size = (n_tasks, ))
             shiftable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
             curtailable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
