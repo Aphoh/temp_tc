@@ -78,7 +78,6 @@ class SocialGameEnv(gym.Env):
         self.last_energy_reward = None
         self.person_type_string = person_type_string
         self.points_multiplier=points_multiplier
-        print("response type string: ", self.response_type_string)
 
         self.day = 0
         self.days_of_week = [0, 1, 2, 3, 4]
@@ -417,9 +416,9 @@ class SocialGameEnv(gym.Env):
         if self.use_smirl:
             self.buffer.add(observation)
 
-        if not self.total_iter % 10:
-            print("Iteration: "+str(self.total_iter) + " reward: " + str(reward))
-            wandb.log({"environment_reward":reward})
+        # if not self.total_iter % 10:
+        #     print("Iteration: "+str(self.total_iter) + " reward: " + str(reward))
+        #     wandb.log({"environment_reward":reward})
 
         info = {}
         return observation, reward, done, info
@@ -546,7 +545,7 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
             maxCurtailHours=np.random.choice(range(8), (n_tasks, ))
         elif self.mode == "test":
             print("SAMPLING TEST ENVIRONMENT")
-            person_type = [DeterministicFunctionPerson for i in range(n_tasks)]
+            person_type = [CurtailAndShiftPerson for i in range(n_tasks)]
             points_multiplier = [10 for i in range(n_tasks)]
             response = ['t' for i in range(n_tasks)]
             shiftable_load_frac = [0.2 for i in range(n_tasks)]
