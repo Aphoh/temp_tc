@@ -25,16 +25,27 @@ from gym_microgrid.envs.microgrid_env import MicrogridEnvRLLib
 import ray
 import ray.rllib.agents.ppo as ray_ppo
 import ray.rllib.agents.maml as ray_maml
+import ray.rllib.agents.sac as ray_sac
 from ray import tune
 from ray.tune.integration.wandb import (wandb_mixin, WandbLoggerCallback)
 from ray.tune.logger import (DEFAULT_LOGGERS, pretty_print, UnifiedLogger)
 from ray.tune.integration.wandb import WandbLogger
+import pickle
+
+from ray.rllib.agents.maml.maml_tf_policy import MAMLTFPolicy
+from ray.rllib.agents.maml.maml_torch_policy import MAMLTorchPolicy
+
+from ray.rllib.agents.trainer_template import build_trainer
+
+from pprint import pprint
+import pdb
+
+import IPython
 
 from ray.rllib.contrib.bandits.agents.lin_ucb import UCB_CONFIG
 from ray.rllib.contrib.bandits.agents.lin_ucb import LinUCBTrainer
 import pickle
 from ray.rllib.utils.framework import try_import_tf, get_variable
-import IPython
 tf1, tf, tfv = try_import_tf()
 def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
     """
@@ -50,14 +61,12 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
     elif library=="tune":
 
-        ray.init()
-
         if args.algo=="ppo":
             config = ray_ppo.DEFAULT_CONFIG.copy()
             config["framework"] = "torch"
             config["env"] = SocialGameEnvRLLib
             config["callbacks"] = CustomCallbacks
-            config["num_gpus"] = 0
+            config["num_gpus"] = 1
             config["num_workers"] = 4
             config["env_config"] = vars(args)
 
@@ -97,9 +106,218 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
     elif library=="rllib":
 
-        ray.init(local_mode=True)
-
         if args.algo=="ppo":
+            callbacks = agent.config['callbacks']()
+            to_log = ["episode_reward_mean"]
+            timesteps_total = 0
+            while timesteps_total < num_steps:
+                result = agent.train()
+                timesteps_total = result["timesteps_total"]
+                log = {name: result[name] for name in to_log}
+                if args.wandb:
+                    wandb.log(log)
+                else:
+                    print(log)
+                if args.checkpoint_interval != -1 and timesteps_total % args.checkpoint_interval == 0:
+                    ckpt_dir = "ppo_ckpts/{}{}.ckpt".format(wandb.run.name, timesteps_total)
+                    with open(ckpt_dir, "wb") as ckpt_file:
+                        agent_weights = agent.get_policy().get_weights()
+                        pickle.dump(agent_weights, ckpt_file)
+
+            callbacks.save()
+
+        elif args.algo=="maml":
+            
+            to_log = ["episode_reward_mean", "episode_reward_mean_adapt_5", "adaptation_delta"]
+
+            for i in range(num_steps):
+                result = agent.train()
+                log = {name: result[name] for name in to_log}
+                if args.wandb:
+                    wandb.log(log, commit=False)
+                    wandb.log({"total_loss": result["info"]["learner"]["default_policy"]["total_loss"]})
+                else:
+                    print(log)
+                if i % args.checkpoint_interval == 0:
+                    ckpt_dir = "maml_ckpts/{}{}.ckpt".format(wandb.run.name, i)
+                    with open(ckpt_dir, "wb") as ckpt_file:
+                        agent_weights = agent.get_policy().get_weights()
+                        pickle.dump(agent_weights, ckpt_file)
+
+        elif args.algo == "sac" or args.algo == "warm_sac":
+            print("In SAC training loop")
+            to_log = ["episode_reward_mean"]
+            for i in range(num_steps):
+                result = agent.train()
+                log = {name: result[name] for name in to_log}
+                print(log)
+                if args.wandb:
+                    wandb.log(log)
+                else:
+                    print(log)
+                if i % args.checkpoint_interval == 0:
+                    ckpt_dir = "sac_ckpts/{}{}.ckpt".format(wandb.run.name, i)
+                    with open(ckpt_dir, "wb") as ckpt_file:
+                        agent_weights = agent.get_policy().get_weights()
+                        pickle.dump(agent_weights, ckpt_file)
+
+        # Trying bandit without tuning 
+        elif args.algo=="uc_bandit":
+            config = UCB_CONFIG
+            config["env"] = SocialGameEnvRLLib
+            config["env_config"] = vars(args)
+            updated_agent = LinUCBTrainer(
+                config = config
+            )
+    
+            for i in range(num_steps):
+                result = updated_agent.train()
+                mean_reward = np.mean(result["hist_stats"]["episode_reward"])
+                if args.wandb:
+                    wandb.log({"episode_reward_mean" : mean_reward})
+                else:
+                    print(mean_reward)
+
+
+
+def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
+    """
+    Purpose: Evaluate policy on environment over num_eval_episodes and print results
+
+    Args:
+        Model: Stable baselines model
+        Env: Gym environment for evaluation
+        num_eval_episodes: (Int) number of episodes to evaluate policy
+        list_reward_per_episode: (Boolean) Whether or not to return a list containing rewards per episode (instead of mean reward over all episodes)
+
+    """
+    mean_reward, std_reward = evaluate_policy(
+        model, env, num_eval_episodes, return_episode_rewards=list_reward_per_episode
+    )
+
+    print("Test Results: ")
+    print("Mean Reward: {:.3f}".format(mean_reward))
+    print("Std Reward: {:.3f}".format(std_reward))
+
+
+def maml_eval_fn(model_weights, args):
+    """
+    Purpose: Evaluate a model on 100 steps in MAML random test environments over the social game metaenvironment
+    Args:
+        model_weights: Weights from MAMLTrainer from RLLib
+        args: command line arguments
+
+    """
+    
+    config = ray_maml.DEFAULT_CONFIG.copy()
+    config["framework"] = "tf1"
+    config["num_gpus"] = 1
+    config["num_envs_per_worker"] = 1
+    config["num_workers"] = 1
+    config["inner_adaptation_steps"] = 100
+    config["env"] = SocialGameMetaEnv
+    config["env_config"] = vars(args)
+    config["env_config"]["mode"] = "test"
+    config["normalize_actions"] = True
+    config["clip_actions"] = True
+    config["inner_lr"] = args.maml_inner_lr
+    config["lr"] = 0 # make lr 0 so no outer adaptation occurs for validation
+    config["vf_clip_param"] = args.maml_vf_clip_param
+    config["maml_optimizer_steps"] = 0
+    #Build a custom MAML trainer that does not error when maml_optimizer_steps=0
+    from ray.rllib.agents.maml.maml import get_policy_class
+    from maml_copy import execution_plan
+    evalMAMLTrainer = build_trainer(
+                                    name="MAML",
+                                    default_config=ray_maml.DEFAULT_CONFIG,
+                                    default_policy=MAMLTFPolicy,
+                                    get_policy_class=get_policy_class,
+                                    execution_plan=execution_plan,
+                                    validate_config=lambda x: x)
+    updated_agent = evalMAMLTrainer(config=config, env = SocialGameMetaEnv)
+    print("started new trainer")
+    if not args.validate_baseline:
+        updated_agent.get_policy().set_weights(model_weights)
+        print("set new weights")
+    else:
+        model_weights = updated_agent.get_policy().get_weights()
+    to_log = ["episode_reward_mean", "episode_reward_mean_adapt_2", "adaptation_delta"]
+    validation_reward = [0 for j in range(0, config["inner_adaptation_steps"])]
+    
+    for i in range(args.val_num_trials):
+        print("step {}".format(i))
+        result = updated_agent.train()
+        log = {"val_maml_" + name: result[name] for name in to_log}
+        if args.wandb:
+            wandb.log(log, commit=False)
+            for j in range(1, config["inner_adaptation_steps"]+1):
+                wandb.log({"validation_inner_reward_{}".format(i): result["episode_reward_mean_adapt_{}".format(j)]})
+                validation_reward[j-1] += result["episode_reward_mean_adapt_{}".format(j)] / args.num_steps
+                
+        else:
+            print(log)
+    if args.wandb:
+        # Log everything to wandb
+        for j in range(1, config["inner_adaptation_steps"]+1):
+            wandb.log({"validation_inner_reward": validation_reward[j-1],
+                        "inner_reward_step": j})
+    model_weights2 = updated_agent.get_policy().get_weights()
+    np.testing.assert_equal(model_weights2, model_weights, err_msg="Weights were changed during validation")
+    if str(model_weights) != str(model_weights2):
+        print("Weights were changed")
+    else:
+        print("Weights were not changed")
+ 
+def ppo_to_sac_weights(ppo_weights, sac_trainer, ppo_torch=False):
+    sac_weights = sac_trainer.get_policy().get_weights()
+    # Copying policy network weights
+    if ppo_torch:
+        sac_weights["action_model.action_0._model.0.weight"] = ppo_weights["_hidden_layers.0._model.0.weight"]
+        sac_weights["action_model.action_0._model.0.bias"] = ppo_weights["_hidden_layers.0._model.0.bias"]
+        sac_weights["action_model.action_1._model.0.weight"] = ppo_weights["_hidden_layers.1._model.0.weight"]
+        sac_weights["action_model.action_1._model.0.bias"] = ppo_weights["_hidden_layers.1._model.0.bias"]
+        sac_weights["action_model.action_out._model.0.weight"] = ppo_weights["_logits._model.0.weight"]
+        sac_weights["action_model.action_out._model.0.bias"] = ppo_weights["_logits._model.0.bias"]
+    else:
+        sac_weights["action_model.action_0._model.0.weight"] = ppo_weights["fc_1/kernel"].T
+        sac_weights["action_model.action_0._model.0.bias"] = ppo_weights["fc_1/bias"]
+        sac_weights["action_model.action_1._model.0.weight"] = ppo_weights["fc_2/kernel"].T
+        sac_weights["action_model.action_1._model.0.bias"] = ppo_weights["fc_2/bias"]
+        sac_weights["action_model.action_out._model.0.weight"] = ppo_weights["fc_out/kernel"].T
+        sac_weights["action_model.action_out._model.0.bias"] = ppo_weights["fc_out/bias"]
+    
+    sac_trainer.get_policy().set_weights(sac_weights)
+    
+def get_agent(env, args, non_vec_env=None):
+    """
+    Purpose: Import algo, policy and create agent
+    Returns: Agent
+
+    Exceptions: Raises exception if args.algo unknown (not needed b/c we filter in the parser, but I added it for modularity)
+    """
+
+    if args.library=="sb3":
+        if args.algo == "sac":
+            return SAC(
+                policy=SACMlpPolicy,
+                env=env,
+                batch_size=args.batch_size,
+                learning_starts=30,
+                verbose=0,
+                tensorboard_log=args.log_path,
+                learning_rate=args.learning_rate)
+
+        elif args.algo == "ppo":
+            return PPO(
+                    policy=PPOMlpPolicy,
+                    env=env,
+                    verbose=2,
+                    n_steps=128,
+                    tensorboard_log=args.log_path)
+
+    elif args.library=="rllib" or args.library=="tune":
+
+        if args.algo == "ppo":
             train_batch_size = 256
             config = ray_ppo.DEFAULT_CONFIG.copy()
             config["framework"] = "torch"
@@ -161,130 +379,64 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 new_weights = updated_agent.get_policy().get_weights()
                 assert not np.array_equal(old_weights, new_weights)
 
-            
-            def set_kl(w):
-                def set_kl_policy(policy, pid):
-
-                    policy.kl_coeff = get_variable(
-                    float(policy.kl_coeff),
-                    tf_name="kl_coeff",
-                    trainable=False,
-                    framework="tf1")
-                w.foreach_policy(set_kl_policy)
-            updated_agent.workers.foreach_worker(set_kl)
-            #updated_agent.set_policy(policy)
-            to_log = ["episode_reward_mean"]
-            timesteps_total = 0
-            while timesteps_total < num_steps:
-                result = updated_agent.train()
-                timesteps_total = result["timesteps_total"]
-                log = {name: result[name] for name in to_log}
-                if args.wandb:
-                    wandb.log(log)
-                else:
-                    print(log)
-
-            callbacks.save()
-
-        elif args.algo=="maml":
-            config = ray_maml.DEFAULT_CONFIG.copy()
-            config["num_gpus"] = 1
-            config["train_batch_size"] = train_batch_size
-            config["num_workers"] = 4
-            config["env"] = SocialGameMetaEnv
-            config["env_config"] = vars(args)
-            config["normalize_actions"] = True
-            config["log_save_interval"] = 10
-            updated_agent = ray_maml.MAMLTrainer(config=config, env = SocialGameMetaEnv)
-            to_log = ["episode_reward_mean", "episode_reward_mean_adapt_1", "adaptation_delta"]
-
-            for i in range(num_steps):
-                result = updated_agent.train()
-                log = {name: result[name] for name in to_log}
-                if args.wandb:
-                    wandb.log(log)
-                    wandb.log({"total_loss": result["info"]["learner"]["default_policy"]["total_loss"]})
-                else:
-                    print(log)
-
-        # Trying bandit without tuning 
-        elif args.algo=="uc_bandit":
-            config = UCB_CONFIG
-            config["env"] = SocialGameEnvRLLib
-            config["env_config"] = vars(args)
-            updated_agent = LinUCBTrainer(
-                config = config
-            )
-    
-            for i in range(num_steps):
-                result = updated_agent.train()
-                mean_reward = np.mean(result["hist_stats"]["episode_reward"])
-                if args.wandb:
-                    wandb.log({"episode_reward_mean" : mean_reward})
-                else:
-                    print(mean_reward)
-
-
-
-def eval_policy(model, env, num_eval_episodes: int, list_reward_per_episode=False):
-    """
-    Purpose: Evaluate policy on environment over num_eval_episodes and print results
-
-    Args:
-        Model: Stable baselines model
-        Env: Gym environment for evaluation
-        num_eval_episodes: (Int) number of episodes to evaluate policy
-        list_reward_per_episode: (Boolean) Whether or not to return a list containing rewards per episode (instead of mean reward over all episodes)
-
-    """
-    mean_reward, std_reward = evaluate_policy(
-        model, env, num_eval_episodes, return_episode_rewards=list_reward_per_episode
-    )
-
-    print("Test Results: ")
-    print("Mean Reward: {:.3f}".format(mean_reward))
-    print("Std Reward: {:.3f}".format(std_reward))
-
-def get_agent(env, args, non_vec_env=None):
-    """
-    Purpose: Import algo, policy and create agent
-    Returns: Agent
-
-    Exceptions: Raises exception if args.algo unknown (not needed b/c we filter in the parser, but I added it for modularity)
-    """
-
-    if args.library=="sb3":
-        if args.algo == "sac":
-            return SAC(
-                policy=SACMlpPolicy,
-                env=env,
-                batch_size=args.batch_size,
-                learning_starts=30,
-                verbose=0,
-                tensorboard_log=args.log_path,
-                learning_rate=args.learning_rate)
-
-        elif args.algo == "ppo":
-            return PPO(
-                    policy=PPOMlpPolicy,
-                    env=env,
-                    verbose=2,
-                    n_steps=128,
-                    tensorboard_log=args.log_path)
-
-    elif args.library=="rllib" or args.library=="tune":
-
-        if args.algo == "ppo":
-            trainer = ray_ppo.PPOTrainer
-            return trainer
+            return updated_agent
 
         elif args.algo == "maml":
-            trainer = ray_maml.MAMLTrainer
+            config = ray_maml.DEFAULT_CONFIG.copy()
+            config["framework"] = "tf1"
+            config["num_gpus"] = 1
+            config["num_envs_per_worker"] = 2
+            config["num_workers"] = args.maml_num_workers
+            config["train_batch_size"] = 16
+            config["rollout_fragment_length"]=32 
+            #num_envs_per_worker * num_workers * rollout_fragment_length = total number of steps sampled from env per PPO step
+            config["inner_adaptation_steps"] = args.maml_inner_adaptation_steps
+            config["maml_optimizer_steps"] = args.maml_optimizer_steps
+            config["env"] = SocialGameMetaEnv
+            config["env_config"] = vars(args)
+            config["env_config"]["mode"] = "train"
+            config["normalize_actions"] = True
+            config["clip_actions"] = True
+            config["inner_lr"] = args.maml_inner_lr
+            config["lr"] = args.maml_outer_lr
+            #config["output"] = "ppo_output_sim_data"
+            #config["output_max_file_size"] = 5000000
+            config["output_compress_columns"] = ["obs", "new_obs", "reward"]
+            config["vf_clip_param"] = args.maml_vf_clip_param
+            trainer = ray_maml.MAMLTrainer(config=config, env=SocialGameMetaEnv)
             return trainer
-
+        elif args.algo == "sac" or args.algo == "warm_sac":
+            
+            config = ray_sac.DEFAULT_CONFIG
+            config["env"] = SocialGameEnvRLLib
+            config["env_config"] = vars(args)
+            config["framework"]="tf"
+            # config["output"] = "sac_output_sim_data2"
+            # config["output_max_file_size"] = 5000000
+            #config["postprocess_inputs"]=True
+            config["input"] = {}
+            if args.offline_sampling_prop != 0:
+                config["input"][args.offline_data_path] = args.offline_sampling_prop
+            if args.offline_sampling_prop!=1:
+                config["input"]["sampler"]=(1-args.offline_sampling_prop)
+            config["input_evaluation"]= []
+            SACTrainer = ray_sac.SACTrainer(config, env = SocialGameEnvRLLib)
+            a = SACTrainer.get_policy().get_weights()
+            if args.algo == "warm_sac":
+                with open(args.warm_sac_ckpt, 'rb') as ckpt_file:
+                    ppo_weights = pickle.load(ckpt_file)
+                #ppo_to_sac_weights(ppo_weights, SACTrainer, ppo_torch=True)
+                SACTrainer.get_policy().set_weights(ppo_weights)
+            print("got SAC trainer")
+            return SACTrainer
+            # Testing setup
+            # a = SACTrainer.get_policy()
+            # b = a.get_weights()
+            # import pdb; pdb.set_trace()
+            # print(SACTrainer.get_policy().get_weights())
+            #TODO: read weights from warm_sac_ckpt file and add to policy
     else:
         raise NotImplementedError("Algorithm {} not supported. :( ".format(args.algo))
-
 
 def args_convert_bool(args):
     """
@@ -352,7 +504,9 @@ def get_environment(args):
             reward_function=reward_function,
             bin_observation_space = args.bin_observation_space,
             manual_tou_magnitude=args.manual_tou_magnitude,
-            smirl_weight=args.smirl_weight
+            smirl_weight=args.smirl_weight,
+            person_type_string=args.person_type_string,
+            points_multiplier=args.points_multiplier
         )
     elif args.gym_env == "microgrid":
         gym_env = gym.make(
@@ -365,7 +519,9 @@ def get_environment(args):
             pricing_type=args.pricing_type,
             reward_function=reward_function,
             manual_tou_magnitude=args.manual_tou_magnitude,
-            smirl_weight=args.smirl_weight # NOTE: Complex Batt PV and two price state default values used
+            smirl_weight=args.smirl_weight, # NOTE: Complex Batt PV and two price state default values used
+            person_type_string=args.person_type_string,
+            points_multiplier=args.points_multiplier
         )
 
     elif args.gym_env == "planning":
@@ -379,7 +535,9 @@ def get_environment(args):
             pricing_type=args.pricing_type,
             reward_function=reward_function,
             manual_tou_magnitude=args.manual_tou_magnitude,
-            smirl_weight=args.smirl_weight 
+            smirl_weight=args.smirl_weight,
+            person_type_string=args.person_type_string,
+            points_multiplier=args.points_multiplier 
         )
 
     # Check to make sure any new changes to environment follow OpenAI Gym API
@@ -398,10 +556,10 @@ def vectorize_environment(env, args, include_non_vec_env=False):
         env = VecNormalize(venv)
 
         # env.step = temp_step_fnc
-        if not include_non_vec_env:
-            return env
-        else:
-            return env, socialgame_env
+        # if not include_non_vec_env:
+        #     return env
+        # else:
+        #     return env, socialgame_env
 
     elif args.library=="rllib" or args.library == "tune":
         #RL lib auto-vectorizes them, sweet
@@ -414,7 +572,6 @@ def vectorize_environment(env, args, include_non_vec_env=False):
     else:
         print("Wrong library!")
         raise AssertionError
-
 
 def parse_args():
     """
@@ -449,7 +606,7 @@ def parse_args():
         help="RL Algorithm",
         type=str,
         default="sac",
-        choices=["sac", "ppo", "maml", "uc_bandit"]
+        choices=["sac", "ppo", "maml", "warm_sac", "uc_bandit"]
     )
     parser.add_argument(
         "--base_log_dir",
@@ -495,6 +652,19 @@ def parse_args():
         type=str,
         default="l",
         choices=["l", "t", "s"],
+    )
+    parser.add_argument(
+        "--person_type_string",
+        help="Player response type (c = Curtail and Shift, d = Deterministic Function)",
+        type=str,
+        default="c",
+        choices=["c", "d"]
+    )
+    parser.add_argument(
+        "--points_multiplier",
+        help="Points multiplier for each agent",
+        type=float,
+        default=10.0,
     )
     parser.add_argument(
         "--one_day",
@@ -604,6 +774,83 @@ def parse_args():
         default=None,
     )
     parser.add_argument(
+        "--maml_num_workers",
+        help = "Number of workers to use with MAML",
+        type = int,
+        default = 1
+    )
+    parser.add_argument(
+        "--maml_inner_adaptation_steps",
+        help = "Number of inner adaptation steps for MAML",
+        type = int,
+        default = 1
+    )
+    parser.add_argument(
+        "--maml_optimizer_steps",
+        help = "Number of meta adaptation steps for MAML",
+        type = int,
+        default=1
+    )
+    parser.add_argument(
+        "--maml_inner_lr",
+        help = "Learning rate for inner adaptation training",
+        type = float,
+        default = 0.1
+    )
+    parser.add_argument(
+        "--maml_vf_clip_param",
+        help = "Clip param for the value function. Note that this is sensitive to the \
+                scale of the rewards. If your expected V is large, increase this.",
+        type = float,
+        default=10.0
+    )
+    parser.add_argument(
+        "--maml_outer_lr",
+        help = "Learning rate for meta adaptation training",
+        type = float,
+        default=0.001
+    )
+    parser.add_argument(
+        "--checkpoint_interval",
+        help = "How many training iterations between checkpoints, set to -1 to disable checkpointing",
+        type = int,
+        default=100
+    )
+    parser.add_argument(
+        "--validate_checkpoint",
+        help= "Path to MAMLTrainer checkpoint to validate from",
+        type=str,
+        default=None
+    )
+    parser.add_argument(
+        "--validate_baseline",
+        help = "Whether to evaluate the PPO baseline for the MAML tasks",
+        action="store_true",
+        default=False
+    )
+    parser.add_argument(
+        "--val_num_trials",
+        help = "Number of trials to run validation for",
+        type=int,
+        default=5
+    )
+    parser.add_argument(
+        "--warm_sac_ckpt",
+        help="Path to initial models for warm starting SAC",
+        type=str,
+        default=None
+    )
+    parser.add_argument(
+        "--offline_sampling_prop",
+        type = float,
+        default = .5
+    )
+    parser.add_argument(
+        "--offline_data_path",
+        type=str,
+        default="output_simulation_data"
+    )
+    parser.add_argument(
         "--circ_buffer_size",
         help="Size of circular smirl buffer to use. Will use an unlimited size buffer in None",
         type = float,
@@ -632,7 +879,6 @@ def parse_args():
 
 
 def main():
-
     # Get args
     args = parse_args()
 
@@ -643,7 +889,6 @@ def main():
         wandb.init(project="energy-demand-response-game", entity="social-game-rl")
         wandb.tensorboard.patch(root_logdir=args.log_path) # patching the logdir directly seems to work
         wandb.config.update(args)
-
     # Create environments
     if args.library == "sb3":
         env = get_environment(
@@ -663,27 +908,45 @@ def main():
         print("Got agent")
 
     else:
-        model = get_agent(env=None, args = args, non_vec_env=None)
+        ray.init()
+        print("Got vectorized environment, getting agent")
+        validation_mode = args.validate_checkpoint or args.validate_baseline
+        weights = None
 
-    # Train algo, (logging through Tensorboard)
-    print("Beginning Testing!")
-    r_real = train(
-        agent = model,
-        num_steps = args.num_steps,
-        tb_log_name=args.exp_name,
-        args = args,
-        library=args.library
-    )
+        if args.algo != "maml" or not validation_mode:
+            # Create Agent
+            model = get_agent(None, args, non_vec_env=None)
+            print("Got agent")
 
-    print("Training Completed! View TensorBoard logs at " + args.log_path)
+    if not validation_mode:
+
+        # Train algo, (logging through Tensorboard)
+        print("Beginning Testing!")
+        r_real = train(
+            agent = model,
+            num_steps = args.num_steps,
+            tb_log_name=args.exp_name,
+            args = args,
+            library=args.library
+        )
+        weights = model.get_policy().get_weights()
+        print("Training Completed! View TensorBoard logs at " + args.log_path)
+        model.stop()
+    elif not args.validate_baseline:
+        with open(args.validate_checkpoint, "rb") as ckpt_file:
+            weights = pickle.load(ckpt_file)
 
     # Print evaluation of policy
     print("Beginning Evaluation")
-
+    if args.algo == "maml":
+        
+        maml_eval_fn(weights, args)
     print(
         "If there was no planning model involved, remember that the output will be in the log dir"
     )
 
 
 if __name__ == "__main__":
+    #Workaround for pdb to work with multiprocessing
+    __spec__=None
     main()

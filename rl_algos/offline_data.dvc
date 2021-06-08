@@ -1,0 +1,5 @@
+outs:
+- md5: d9df35c515b55ff96697825324ca2012.dir
+  size: 2547684689
+  nfiles: 1093
+  path: offline_data
