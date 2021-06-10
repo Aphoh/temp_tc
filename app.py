@@ -155,7 +155,7 @@ def final_output_get_points(
 ):
     return {
         "gameId": gameId,
-        "acknowledgementId": acknowledgmentId,
+        "acknowledgmentId": acknowledgmentId,
         "message": "completed",
         "users": [
             {
@@ -328,7 +328,7 @@ def get_points_with_base_points():
     req = request.get_json()
 
     game_id = req.get("gameId")
-    acknowledgment_id = req.get("acknowledgementId")
+    acknowledgment_id = req.get("acknowledgmentId")
 
     latest_energy_vector = get_all_instances_from_key(
         EnergyUsage, "ack_id", text(acknowledgment_id)
