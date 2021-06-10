@@ -7,4 +7,4 @@ WORKDIR=/home/$UNAME
 docker run \
     -p 5000:5000 \
     -v "$(pwd)/database:/app/database" \
-    lucasspangher/social_game_api_image:latesp
+    lucasspangher/social_game_api_image:latest

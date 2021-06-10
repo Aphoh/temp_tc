@@ -14,7 +14,6 @@ from config import (
     BASE_POINTS_VALUE,
     DATE_FORMAT,
     END_OF_DAY_HOUR,
-    END_OF_INITIAL_PERIOD,
     IS_MULTIAGENT,
     START_OF_DAY_HOUR,
     TIMESTAMP_FORMAT,
@@ -137,9 +136,7 @@ def get_prices_from_model(params, is_multiagent):
 
 
 def is_initial_phase():
-    return datetime.strptime(END_OF_INITIAL_PERIOD, "%d/%m/%Y").replace(
-        tzinfo=pytz.timezone(LOCAL_TIMEZONE)
-    ) > datetime.now(pytz.timezone(LOCAL_TIMEZONE))
+    return True
 
 
 def calculate_earned_points(energy_vector, prices_vector, base_points_vector):
