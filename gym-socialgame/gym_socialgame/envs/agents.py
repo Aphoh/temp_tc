@@ -136,7 +136,6 @@ class DeterministicFunctionPerson(Person):
 	def __init__(self, baseline_energy_df, points_multiplier = 1, response = 't', **kwargs):
 		super().__init__(baseline_energy_df, points_multiplier)
 		self.response = response
-		print("response type: ", response)
 
 	def threshold_response_func(self, points):
 		points = np.array(points) * self.points_multiplier

@@ -146,20 +146,26 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
         elif args.algo == "sac" or args.algo == "warm_sac":
             print("In SAC training loop")
+            callbacks = agent.config['callbacks']()
             to_log = ["episode_reward_mean"]
             for i in range(num_steps):
                 result = agent.train()
                 log = {name: result[name] for name in to_log}
-                print(log)
                 if args.wandb:
                     wandb.log(log)
                 else:
                     print(log)
+                if args.gym_env == "planning_dagger":
+                    # Decay the ratio of planning steps to target steps
+                    agent.workers.foreach_worker(
+                        lambda ev: ev.foreach_env(
+                            lambda env: env.decay_ratio()))
                 if i % args.checkpoint_interval == 0:
                     ckpt_dir = "sac_ckpts/{}{}.ckpt".format(wandb.run.name, i)
                     with open(ckpt_dir, "wb") as ckpt_file:
                         agent_weights = agent.get_policy().get_weights()
                         pickle.dump(agent_weights, ckpt_file)
+            callbacks.save()
 
         # Trying bandit without tuning 
         elif args.algo=="uc_bandit":
@@ -210,6 +216,13 @@ def maml_eval_fn(model_weights, args):
     """
     
     config = ray_maml.DEFAULT_CONFIG.copy()
+    if args.gym_env == "socialgame":
+        obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
+    elif args.gym_env == "microgrid":
+        obs_dim = 72 * np.sum([args.energy_in_state, args.price_in_state])
+    elif args.gym_env == "planning":
+        obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
+        
     config["framework"] = "tf1"
     config["num_gpus"] = 1
     config["num_envs_per_worker"] = 1
@@ -221,6 +234,13 @@ def maml_eval_fn(model_weights, args):
     config["normalize_actions"] = True
     config["clip_actions"] = True
     config["inner_lr"] = args.maml_inner_lr
+    out_path = os.path.join(args.log_path, "bulk_data.h5")
+    callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim)
+    config["callbacks"] = lambda: callbacks
+    callbacks.save()
+    if args.wandb:
+        wandb.save(out_path)
+
     config["lr"] = 0 # make lr 0 so no outer adaptation occurs for validation
     config["vf_clip_param"] = args.maml_vf_clip_param
     config["maml_optimizer_steps"] = 0
@@ -251,16 +271,21 @@ def maml_eval_fn(model_weights, args):
         if args.wandb:
             wandb.log(log, commit=False)
             for j in range(1, config["inner_adaptation_steps"]+1):
-                wandb.log({"validation_inner_reward_{}".format(i): result["episode_reward_mean_adapt_{}".format(j)]})
+                wandb.log({"validation_inner_reward": result["episode_reward_mean_adapt_{}".format(j)]})
                 validation_reward[j-1] += result["episode_reward_mean_adapt_{}".format(j)] / args.num_steps
                 
         else:
             print(log)
+    env = updated_agent.workers.local_worker().env
+    import pdb; pdb.set_trace()
     if args.wandb:
         # Log everything to wandb
         for j in range(1, config["inner_adaptation_steps"]+1):
             wandb.log({"validation_inner_reward": validation_reward[j-1],
                         "inner_reward_step": j})
+        for j in range(len(env.costs)):
+            wandb.log({"energy_cost": env.costs[i], "energy_step": j})
+    callbacks.save()
     model_weights2 = updated_agent.get_policy().get_weights()
     np.testing.assert_equal(model_weights2, model_weights, err_msg="Weights were changed during validation")
     if str(model_weights) != str(model_weights2):
@@ -405,36 +430,47 @@ def get_agent(env, args, non_vec_env=None):
             config["vf_clip_param"] = args.maml_vf_clip_param
             trainer = ray_maml.MAMLTrainer(config=config, env=SocialGameMetaEnv)
             return trainer
+
         elif args.algo == "sac" or args.algo == "warm_sac":
-            
+            if args.gym_env=="planning_dagger":
+                env = SocialGameEnvRLLibPlanning
+                obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
+            else:
+                env = SocialGameEnvRLLib
+                obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
             config = ray_sac.DEFAULT_CONFIG
-            config["env"] = SocialGameEnvRLLib
+            config["env"] = env
             config["env_config"] = vars(args)
             config["framework"]="tf"
+            config["learning_starts"]=config["train_batch_size"]
             # config["output"] = "sac_output_sim_data2"
             # config["output_max_file_size"] = 5000000
             #config["postprocess_inputs"]=True
             config["input"] = {}
+            
+            out_path = os.path.join(args.log_path, "bulk_data.h5")
+            callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim)
+            config["callbacks"] = lambda: callbacks
+            logger_creator = utils.custom_logger_creator(args.log_path)
+            callbacks.save()
+            if args.wandb:
+                wandb.save(out_path)
+
+            config["env_config"] = vars(args)
             if args.offline_sampling_prop != 0:
                 config["input"][args.offline_data_path] = args.offline_sampling_prop
             if args.offline_sampling_prop!=1:
                 config["input"]["sampler"]=(1-args.offline_sampling_prop)
+
             config["input_evaluation"]= []
-            SACTrainer = ray_sac.SACTrainer(config, env = SocialGameEnvRLLib)
-            a = SACTrainer.get_policy().get_weights()
-            if args.algo == "warm_sac":
-                with open(args.warm_sac_ckpt, 'rb') as ckpt_file:
-                    ppo_weights = pickle.load(ckpt_file)
+            SACTrainer = ray_sac.SACTrainer(config, env=env, logger_creator=logger_creator)
+            if args.checkpoint:
+                with open(args.checkpoint, 'rb') as ckpt_file:
+                    sac_weights = pickle.load(ckpt_file)
                 #ppo_to_sac_weights(ppo_weights, SACTrainer, ppo_torch=True)
-                SACTrainer.get_policy().set_weights(ppo_weights)
+                SACTrainer.get_policy().set_weights(sac_weights)
             print("got SAC trainer")
             return SACTrainer
-            # Testing setup
-            # a = SACTrainer.get_policy()
-            # b = a.get_weights()
-            # import pdb; pdb.set_trace()
-            # print(SACTrainer.get_policy().get_weights())
-            #TODO: read weights from warm_sac_ckpt file and add to policy
     else:
         raise NotImplementedError("Algorithm {} not supported. :( ".format(args.algo))
 
@@ -598,7 +634,7 @@ def parse_args():
         "--gym_env", 
         help="Which Gym Environment you wihs to use",
         type=str,
-        choices=["socialgame", "microgrid", "planning"],
+        choices=["socialgame", "microgrid", "planning", "planning_dagger"],
         default="socialgame"
     )
     parser.add_argument(
@@ -843,7 +879,7 @@ def parse_args():
     parser.add_argument(
         "--offline_sampling_prop",
         type = float,
-        default = .5
+        default = 0.0
     )
     parser.add_argument(
         "--offline_data_path",
@@ -868,6 +904,18 @@ def parse_args():
         type=str,
         default=None
         )
+    parser.add_argument(
+        "--dagger_decay",
+        help = "Exponential decay factor for ratio for dagger",
+        type=float,
+        default=0.9
+    )
+    parser.add_argument(
+        "--ignore_warnings",
+        help="Ignore all numpy warnings",
+        action="store_true",
+        default=False
+    )
 
     args = parser.parse_args()
 
@@ -885,10 +933,14 @@ def main():
     # Print args for reference
     args_convert_bool(args)
 
+    if args.ignore_warnings:
+        np.seterr(all="ignore")
+
     if args.wandb:
         wandb.init(project="energy-demand-response-game", entity="social-game-rl")
         wandb.tensorboard.patch(root_logdir=args.log_path) # patching the logdir directly seems to work
         wandb.config.update(args)
+
     # Create environments
     if args.library == "sb3":
         env = get_environment(

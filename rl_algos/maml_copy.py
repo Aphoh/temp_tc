@@ -16,6 +16,7 @@ from ray.rllib.evaluation.metrics import collect_metrics
 from ray.rllib.utils.deprecation import DEPRECATED_VALUE
 from ray.util.iter import from_actors
 logger = logging.getLogger(__name__)
+
 def set_worker_tasks(workers, use_meta_env):
     if use_meta_env:
         n_tasks = len(workers.remote_workers())
@@ -23,6 +24,7 @@ def set_worker_tasks(workers, use_meta_env):
             0].sample_tasks(n_tasks)
         for i, worker in enumerate(workers.remote_workers()):
             worker.foreach_env.remote(lambda env: env.set_task(tasks[i]))
+
 def post_process_metrics(adapt_iter, workers, metrics):
     # Obtain Current Dataset Metrics and filter out
     name = "_adapt_" + str(adapt_iter) if adapt_iter > 0 else ""
@@ -140,3 +142,4 @@ def execution_plan(workers, config):
         MetaUpdate(workers, config["maml_optimizer_steps"], metric_collect,
                    use_meta_env))
     return train_op
+

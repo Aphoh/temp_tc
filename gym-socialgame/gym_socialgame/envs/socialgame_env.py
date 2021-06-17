@@ -7,7 +7,6 @@ import random
 from gym_socialgame.envs.utils import price_signal
 from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
-import wandb
 from gym_socialgame.envs.buffers import (GaussianBuffer, GaussianCircularBuffer)
 
 class SocialGameEnv(gym.Env):
@@ -25,8 +24,6 @@ class SocialGameEnv(gym.Env):
         reward_function = "log_cost_regularized",
         bin_observation_space=False,
         manual_tou_magnitude=.3,
-        person_type_string="c",
-        points_multiplier=10,
         smirl_weight=None,
         circ_buffer_size=None):
 
@@ -76,8 +73,7 @@ class SocialGameEnv(gym.Env):
         self.hours_in_day = 10
         self.last_smirl_reward = None
         self.last_energy_reward = None
-        self.person_type_string = person_type_string
-        self.points_multiplier=points_multiplier
+        self.last_energy_cost = None
 
         self.day = 0
         self.days_of_week = [0, 1, 2, 3, 4]
@@ -119,6 +115,7 @@ class SocialGameEnv(gym.Env):
                 print("Using standard gaussian buffer")
                 self.buffer = GaussianBuffer(self.action_length)
 
+        self.costs = []
 
         print("\n Social Game Environment Initialized! Have Fun! \n")
 
@@ -206,10 +203,7 @@ class SocialGameEnv(gym.Env):
         my_baseline_energy = pd.DataFrame(data = {"net_energy_use" : working_hour_energy})
 
         for i in range(self.number_of_participants):
-            if self.person_type_string=="c":
-                player = CurtailAndShiftPerson(my_baseline_energy, points_multiplier = 10, response = 'l')
-            elif self.person_type_string=="d":
-                player = DeterministicFunctionPerson(my_baseline_energy, response=self.response_type_string, points_multiplier = self.points_multiplier)
+            player = CurtailAndShiftPerson(my_baseline_energy, points_multiplier = 10, response = 'l')
             player_dict['player_{}'.format(i)] = player
 
         return player_dict
@@ -331,6 +325,7 @@ class SocialGameEnv(gym.Env):
 
         total_energy_reward = 0
         total_smirl_reward = 0
+        total_energy_cost = 0
         for player_name in energy_consumptions:
             if player_name != "avg":
                 # get the points output from players
@@ -340,6 +335,7 @@ class SocialGameEnv(gym.Env):
                 player_min_demand = player.get_min_demand()
                 player_max_demand = player.get_max_demand()
                 player_energy = energy_consumptions[player_name]
+                player_energy_cost = np.dot(player_energy, price)
                 player_reward = Reward(player_energy, price, player_min_demand, player_max_demand)
                 if reward_function == "scaled_cost_distance":
                    player_ideal_demands = player_reward.ideal_use_calculation()
@@ -356,7 +352,7 @@ class SocialGameEnv(gym.Env):
                     raise AssertionError
 
                 total_energy_reward += reward
-
+                total_energy_cost += player_energy_cost
         total_energy_reward = total_energy_reward / self.number_of_participants
 
         if self.use_smirl:
@@ -365,7 +361,8 @@ class SocialGameEnv(gym.Env):
 
         self.last_smirl_reward = total_smirl_reward
         self.last_energy_reward = total_energy_reward
-
+        self.last_energy_cost = 500 * (total_energy_cost / self.number_of_participants) * 0.001 # 500 hardcoded for now
+        self.costs.append(self.last_energy_cost)
         return total_energy_reward + total_smirl_reward
 
     def step(self, action):
@@ -387,7 +384,7 @@ class SocialGameEnv(gym.Env):
         self.action = action
 
         if not self.action_space.contains(action):
-            print("made it within the if statement in SG_E that tests if the action space doesn't have the action")
+            print("made it within the if statement in SG_E that tests if the the action space doesn't have the action")
             action = np.asarray(action)
             if self.action_space_string == 'continuous':
                 action = np.clip(action, -1, 1) #TODO: check if correct
@@ -399,7 +396,7 @@ class SocialGameEnv(gym.Env):
         self.day = (self.day + 1) % 365
         self.curr_iter += 1
         self.total_iter +=1
-
+        print(self.total_iter)
         done = self.curr_iter > 0
 
         points = self._points_from_action(action)
@@ -415,10 +412,6 @@ class SocialGameEnv(gym.Env):
 
         if self.use_smirl:
             self.buffer.add(observation)
-
-        # if not self.total_iter % 10:
-        #     print("Iteration: "+str(self.total_iter) + " reward: " + str(reward))
-        #     wandb.log({"environment_reward":reward})
 
         info = {}
         return observation, reward, done, info
@@ -522,8 +515,19 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
     def __init__(self,
         env_config,
         task = None):
-        self.mode = env_config["mode"]
-        self.task = (task if task else self.sample_tasks(1)[0])
+
+#        self.goal_direction = goal_direction if goal_direction else 1.0
+
+        self.task = (task if task else {
+            "person_type":np.random.choice([DeterministicFunctionPerson, CurtailAndShiftPerson]),
+            "points_multiplier":np.random.choice(range(20)),
+            "response":np.random.choice(['t','l', 's']),
+            "shiftable_load_frac":np.random.uniform(0, 1),
+            "curtailable_load_frac":np.random.uniform(0, 1),
+            "shiftByHours":np.random.choice(range(8), ),
+            "maxCurtailHours":np.random.choice(range(8),)
+        })
+
         super().__init__(
             env_config=env_config,
         )
@@ -534,26 +538,15 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
         """
         n_tasks will be passed in as a hyperparameter
         """
-        if self.mode == "train":
-            print("SAMPLING TRAIN ENVIRONMENT")
-            person_type = np.random.choice([DeterministicFunctionPerson], size = (n_tasks, ))
-            points_multiplier = [10 for i in range(n_tasks)]
-            response = np.random.choice(['s', 'l', 't'], size = (n_tasks, ))
-            shiftable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
-            curtailable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
-            shiftByHours = np.random.choice(range(8), (n_tasks, ))
-            maxCurtailHours=np.random.choice(range(8), (n_tasks, ))
-        elif self.mode == "test":
-            print("SAMPLING TEST ENVIRONMENT")
-            person_type = [CurtailAndShiftPerson for i in range(n_tasks)]
-            points_multiplier = [10 for i in range(n_tasks)]
-            response = ['t' for i in range(n_tasks)]
-            shiftable_load_frac = [0.2 for i in range(n_tasks)]
-            curtailable_load_frac = [0.2 for i in range(n_tasks)]
-            shiftByHours = [2 for i in range(n_tasks)]
-            maxCurtailHours=[5 for i in range(n_tasks)]
-        else:
-            raise Exception("Please specify whether this is a training or evaluation run")
+
+        person_type = np.random.choice([DeterministicFunctionPerson, CurtailAndShiftPerson], size = (n_tasks, ))
+        points_multiplier = np.random.choice(range(20), size = (n_tasks, ))
+        response = np.random.choice(['t','l', 's'], size = (n_tasks, ))
+        shiftable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
+        curtailable_load_frac = np.random.uniform(0, 1, size = (n_tasks, ))
+        shiftByHours = np.random.choice(range(8), (n_tasks, ))
+        maxCurtailHours=np.random.choice(range(8), (n_tasks, ))
+
         task_parameters = {
             "person_type":person_type,
             "points_multiplier":points_multiplier,
@@ -578,14 +571,7 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
             task: task of the meta-learning environment
         """
         self.task=task
-        self.player_dict = self._create_agents()
-        # self.person_type = task["person_type"]
-        # self.points_multiplier = task["points_multiplier"]
-        # self.response = task["response"]
-        # self.shiftable_load_frac = task["shiftable_load_frac"]
-        # self.curtailable_load_frac = task["curtailable_load_frac"]
-        # self.shiftByHours = task["shiftByHours"]
-        # self.maxCurtailHours = task["maxCurtailHours"]
+        self._create_agents()
 
     def get_task(self):
         """
@@ -630,7 +616,10 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
 class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
     def __init__(self, env_config):
         self.planning_steps = env_config["planning_steps"]
+        self.decay = env_config["dagger_decay"]
         self.is_step_in_real=True
+        self.planning_step_cnt = 0
+        self.num_real_steps = 0
         super().__init__(
             env_config=env_config,
         )
@@ -693,16 +682,20 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
         self.day = (self.day + 1) % 365
         self.curr_iter += 1
         self.total_iter +=1
+        
 
         done = self.curr_iter > 0
 
         points = self._points_from_action(action)
 
-        if not self.total_iter % (1 + self.planning_steps):
+        if self.planning_step_cnt > self.planning_steps:
             # take a step in real
             self.is_step_in_real = True
+            self.num_real_steps += 1
+            self.planning_step_cnt = 0
             energy_consumptions = self._simulate_humans(points)
         else: 
+            self.planning_step_cnt += 1
             # take a step in planning
             self.is_step_in_real = False
             energy_consumptions = self._simulate_humans_planning_model(points)
@@ -719,3 +712,7 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
 
         info = {}
         return observation, reward, done, info
+
+    def decay_ratio(self):
+        """Decays the ratio of planning steps to target steps, meant to be used between calls to train()"""
+        self.planning_steps *= self.decay

@@ -5,7 +5,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.ticker import StrMethodFormatter
 api = wandb.Api()
-run_length = 40000
+run_length = 100000
 def analyze_run(run_name, run_length):
     run = api.run(run_name)
     hist = run.history()
@@ -66,7 +66,7 @@ def analyze_maml_smirl_runs(run_name):
 
     log_iter = run_log
     for idx, log in enumerate(log_iter):
-        if idx < run_length:
+        if log[step_key] < run_length:
             if log[key] != 0:
                 reward_vals.append(log[key])
                 steps.append(log[step_key])
@@ -129,7 +129,7 @@ def visualize_icml_runs(runs):
     run_means = {key: {} for key, val in runs.items()}
     plt.rcParams.update({'font.size': 32})
     plt.rcParams['axes.linewidth'] = 3 # set the value globally
-    fig, axs = plt.subplots(len(runs.keys()), sharex=True, figsize=(20, 20))
+    fig, axs = plt.subplots(len(runs.keys()), sharex=True, figsize=(20, 10))
     colors = ["g", "r", "c", "m"]
     for i, (name, wandb_ids) in enumerate(runs.items()):
         # if len(wandb_ids.keys()) > 2:
@@ -139,15 +139,17 @@ def visualize_icml_runs(runs):
         ax = axs
         ax.yaxis.set_major_formatter(StrMethodFormatter('{x:,.1f}')) # 1 decimal place
         for j, (algo, id) in enumerate(wandb_ids.items()):
-            if "MAML+PPO" == algo:
+            if "MAML+PPO" == algo and False: # disable for now
                 stretch = 400
                 means, stes = analyze_run(id, run_length)
                 x = list(range(0, len(means), stretch))
                 means = np.exp(means[:len(x)]) * 500
-                import pdb; pdb.set_trace()
             else:
                 means, x = analyze_maml_smirl_runs(id)
+            means = np.array(means) + 40 # add daily cost of social game
+            means *= 250 # per day -> per year
             run_means[name][algo] = (x, means)
+            print(max(means), min(means))
             # if len(wandb_ids.keys()) > 2:
             #     ax.errorbar(x, means, yerr = stes, label=algo, linewidth=3.0, color=colors[j])
             # else:
@@ -158,11 +160,12 @@ def visualize_icml_runs(runs):
             ax.spines['right'].set_visible(False)
             ax.spines['top'].set_visible(False)
         ax.set_title(name)
-        ax.set_ylabel("Average Reward", fontsize=40)
-        if True:#i == 0:
-            ax.legend()
+        ax.set_ylabel("Net Cost ($) Per Year", fontsize=40)
+        ax.tick_params(length=6, width=2)
+    plt.plot(x, np.ones_like(x) * ((75 + 40) * 256), label = "TOU Pricing", linewidth = 3)
+    plt.plot(x, np.ones_like(x) * ((120) * 256), label = "Flat Pricing", linewidth = 3)
     plt.xlabel("Environment Sampled Steps", fontsize=40)
-
+    ax.legend()
     fig.tight_layout()
     plt.savefig("figures/icml_fig.png")
 
@@ -216,11 +219,11 @@ offline_runs = {
     # }
 }
 icml_runs = {
-    "TODO: Title": {
-        "MAML+PPO": "social-game-rl/energy-demand-response-game/2g90nma7",
+    "RL Price Controller Cost Analysis": {
+        #"MAML+PPO": "social-game-rl/energy-demand-response-game/2g90nma7",
         "PPO": "social-game-rl/energy-demand-response-game/3l3lz26h",
-        "PPO+SMiRL": "social-game-rl/energy-demand-response-game/kozrn7gt",
-        "MAML+PPO+SMiRL": "social-game-rl/energy-demand-response-game/2047a2n1",
+        #"PPO+SMiRL": "social-game-rl/energy-demand-response-game/kozrn7gt",
+        "MAML+PPO": "social-game-rl/energy-demand-response-game/2047a2n1", # Actually +SMiRL
     }
 }
 visualize_icml_runs(icml_runs)
