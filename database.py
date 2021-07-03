@@ -5,9 +5,11 @@ Interfacing with database and static data.
 from datetime import date, datetime
 import numpy as np
 import pandas as pd
+from sqlalchemy.sql import text
+from sqlalchemy.exc import OperationalError
 
 import config
-from models import db
+from models import EnergyUsage, db
 
 
 def get_all(model):

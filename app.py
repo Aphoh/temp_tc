@@ -189,6 +189,7 @@ def todays_energy_pricing(gameId):
                         "houroftheday": str(time),
                         "rate": get_base_price_signal_for_day(
                             base_signal_db,
+                            participant.username,
                             datetime.now(pytz.timezone(LOCAL_TIMEZONE)).date(),
                         )[time - START_OF_DAY_HOUR],
                     }
@@ -328,7 +329,7 @@ def get_points_with_base_points():
     req = request.get_json()
 
     game_id = req.get("gameId")
-    acknowledgment_id = req.get("acknowledgmentId")
+    acknowledgment_id = req.get("acknowledgementId")
 
     latest_energy_vector = get_all_instances_from_key(
         EnergyUsage, "ack_id", text(acknowledgment_id)
