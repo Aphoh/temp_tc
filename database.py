@@ -52,14 +52,18 @@ def load_square_data_df():
     return pd.read_csv(config.SQUARE_WAVE_DATA_PATH)
 
 
-def get_base_price_signal_for_day(base_price_df: pd.DataFrame, date: date):
-    column_index = (
-        np.busday_count(
-            date,
-            datetime.strptime(config.START_OF_EXPERIMENT, config.DATE_FORMAT).date(),
+def get_base_price_signal_for_day(
+    base_price_df: pd.DataFrame, username: str, date: date
+):
+    try:
+        participant_first_energy = get_instance_from_key(
+            EnergyUsage, "participant_username", text(username)
         )
-        % 10
-    )
+    except OperationalError:
+        column_index = 0
+    else:
+        participant_first_energy_date = participant_first_energy.timestamp.date()
+        column_index = np.busday_count(participant_first_energy_date, date) % 10
     prices = base_price_df.iloc[:, column_index + 1]
 
     return list(prices)
