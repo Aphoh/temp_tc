@@ -160,8 +160,15 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     agent.workers.foreach_worker(
                         lambda ev: ev.foreach_env(
                             lambda env: env.decay_ratio()))
-                if i % args.checkpoint_interval == 0:
-                    ckpt_dir = "sac_ckpts/{}{}.ckpt".format(wandb.run.name, i)
+                if args.checkpoint_interval != -1 and i % args.checkpoint_interval == 0:
+                    if args.wandb:
+                        run_name = wandb.run.name
+                    else:
+                        from datetime import datetime
+                        # datetime object containing current date and time
+                        now = datetime.now()
+                        run_name = now.strftime("%d/%m/%Y-%H:%M:%S")
+                    ckpt_dir = "rl_algos/sac_ckpts/{}{}.ckpt".format(run_name, i)
                     with open(ckpt_dir, "wb") as ckpt_file:
                         agent_weights = agent.get_policy().get_weights()
                         pickle.dump(agent_weights, ckpt_file)
@@ -443,8 +450,9 @@ def get_agent(env, args, non_vec_env=None):
             config["env_config"] = vars(args)
             config["framework"]="tf"
             config["learning_starts"]=config["train_batch_size"]
-            # config["output"] = "sac_output_sim_data2"
-            # config["output_max_file_size"] = 5000000
+            if args.save_transitions:
+                config["output"] = "sac_nosmirl_output_sim_data"
+                config["output_max_file_size"] = 5000000
             #config["postprocess_inputs"]=True
             config["input"] = {}
             
@@ -751,10 +759,10 @@ def parse_args():
     )
     parser.add_argument(
         "--planning_model",
-        help="Which planning model to use",
+        help="Which planning model to use (OLS and ANN are only ones currently implemented)",
         type=str,
         default="Oracle",
-        choices=["Oracle", "Baseline", "LSTM", "OLS"],
+        choices=["Oracle", "Baseline", "LSTM", "OLS", "ANN"],
     )
     parser.add_argument(
         "--pricing_type",
@@ -915,6 +923,18 @@ def parse_args():
         help="Ignore all numpy warnings",
         action="store_true",
         default=False
+    )
+    parser.add_argument(
+        "--save_transitions",
+        help="Whether or not to store observed state transitions and rewards in a folder (currently only for SAC)",
+        action="store_true",
+        default=False
+    )
+    parser.add_argument(
+        "--planning_delay",
+        help="How many steps to sample before swapping from OLS planning environment to ANN",
+        type=int,
+        default=0
     )
 
     args = parser.parse_args()

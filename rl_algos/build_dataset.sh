@@ -7,7 +7,7 @@ do
     do
         PM=($RANDOM % 10 + 10)
         echo $PM $RESPONSE
-        python StableBaselines.py --algo=sac --library=rllib  --num_steps=5 --person_type_string=d --response_type_string=$RESPONSE --points_multiplier=$PM --checkpoint_interval=-1
+        python StableBaselines.py --algo=sac --library=rllib  --num_steps=5 --person_type_string=d --response_type_string=$RESPONSE --points_multiplier=$PM --checkpoint_interval=-1 --save_transitions --ignore_warnings
     done
 done
 # for I in {1..3}

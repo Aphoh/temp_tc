@@ -53,6 +53,9 @@ class CustomCallbacks(DefaultCallbacks):
         episode.user_data["energy_cost"] = []
         episode.hist_data["energy_cost"] = []
 
+        episode.user_data["real_step"] = []
+        episode.hist_data["real_step"] = []
+
     def on_episode_step(self, *, worker: RolloutWorker, base_env: BaseEnv,
                         episode: MultiAgentEpisode, env_index: int, **kwargs):
 
@@ -67,6 +70,8 @@ class CustomCallbacks(DefaultCallbacks):
             if socialgame_env.is_step_in_real:
                 print("Logging real step: ", self.steps_since_save)
                 self.log_vals["step"].append(socialgame_env.num_real_steps)
+                episode.user_data["real_step"].append(socialgame_env.num_real_steps)
+                episode.hist_data["real_step"].append(socialgame_env.num_real_steps)
                 if socialgame_env.use_smirl and socialgame_env.last_smirl_reward:
                     smirl_rew = socialgame_env.last_smirl_reward
                     episode.user_data["smirl_reward"].append(smirl_rew)
@@ -150,6 +155,7 @@ class CustomCallbacks(DefaultCallbacks):
                        policies: Dict[str, Policy], episode: MultiAgentEpisode,
                        env_index: int, **kwargs):
         socialgame_env = base_env.get_unwrapped()[0]
+        episode.custom_metrics["real_step"] = np.mean(episode.user_data["real_step"])
         episode.custom_metrics["energy_reward"] = np.mean(episode.user_data["energy_reward"])
         episode.custom_metrics["energy_cost"] = np.mean(episode.user_data["energy_cost"])
         if socialgame_env.use_smirl:

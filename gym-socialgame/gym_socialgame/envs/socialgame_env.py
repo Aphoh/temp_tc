@@ -9,6 +9,11 @@ from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
 from gym_socialgame.envs.buffers import (GaussianBuffer, GaussianCircularBuffer)
 
+from gym_socialgame.envs.planning_net import Net
+
+from sklearn.preprocessing import MinMaxScaler
+
+import torch
 class SocialGameEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
@@ -24,6 +29,8 @@ class SocialGameEnv(gym.Env):
         reward_function = "log_cost_regularized",
         bin_observation_space=False,
         manual_tou_magnitude=.3,
+        person_type_string="c",
+        points_multiplier=10,
         smirl_weight=None,
         circ_buffer_size=None):
 
@@ -73,6 +80,8 @@ class SocialGameEnv(gym.Env):
         self.hours_in_day = 10
         self.last_smirl_reward = None
         self.last_energy_reward = None
+        self.person_type_string = person_type_string
+        self.points_multiplier = points_multiplier
         self.last_energy_cost = None
 
         self.day = 0
@@ -203,7 +212,12 @@ class SocialGameEnv(gym.Env):
         my_baseline_energy = pd.DataFrame(data = {"net_energy_use" : working_hour_energy})
 
         for i in range(self.number_of_participants):
-            player = CurtailAndShiftPerson(my_baseline_energy, points_multiplier = 10, response = 'l')
+            if self.person_type_string=="c":
+                print("using curtail and shift")
+                player = CurtailAndShiftPerson(my_baseline_energy, points_multiplier = 10, response = 'l')
+            elif self.person_type_string=="d":
+                print("using deterministic with type {}".format(self.response_type_string))
+                player = DeterministicFunctionPerson(my_baseline_energy, response=self.response_type_string, points_multiplier = self.points_multiplier)
             player_dict['player_{}'.format(i)] = player
 
         return player_dict
@@ -505,6 +519,7 @@ class SocialGameEnvRLLib(SocialGameEnv):
             reward_function = env_config["reward_function"],
             bin_observation_space=env_config["bin_observation_space"],
             manual_tou_magnitude=env_config["manual_tou_magnitude"],
+            person_type_string=env_config["person_type_string"],
             smirl_weight=env_config["smirl_weight"],
             circ_buffer_size=env_config["circ_buffer_size"]
         )
@@ -620,9 +635,33 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
         self.is_step_in_real=True
         self.planning_step_cnt = 0
         self.num_real_steps = 0
+        self.orig_planning_steps = self.planning_steps
+        planning_type=env_config["planning_model"]
+        self.planning_delay = env_config["planning_delay"]
+        if planning_type == "OLS" or self.num_real_steps < self.planning_delay:
+            print("Using OLS planning model")
+            self.planning_model = self.OLS_model
+        elif planning_type == "ANN":
+            self.swap_to_ANN()
         super().__init__(
             env_config=env_config,
         )
+
+    def swap_to_ANN(self):
+        print("Using ANN planning model")
+        self.planning_net = Net(10, 32, 10)
+        self.planning_net.load_state_dict(torch.load("model_weights.pth"))
+        #self.planning_scaler = torch.load("model_scaler.pth")
+        # Put loaded planning model into evaluation mode
+        self.planning_net.eval()
+        self.planning_model = lambda action: self.planning_net(
+            torch.tensor(action.reshape([-1, 10]))).detach().numpy().flatten()
+        #self.planning_scaler.inverse_transform(self.planning_net(
+            #torch.tensor(action.reshape([-1, 10]))).detach().numpy().reshape([-1,1 ])).flatten()
+
+    def OLS_model(self, action):
+        return 86 + (5 * (action - 5))
+    
         
     def _simulate_humans_planning_model(self, action):
         """
@@ -634,7 +673,7 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
         Returns:
             Energy_consumption: Dictionary containing the energy usage by player and the average energy 
         """
-
+        print("using planning model")
         energy_consumptions = {}
         total_consumption = np.zeros(10)
 
@@ -642,7 +681,7 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
             #Get players response to agent's actions
             player = self.player_dict[player_name]
 
-            player_energy = 86 + (5 * (action - 5)) ## need to change this baseline model
+            player_energy = self.planning_model(action)
 
             #Calculate energy consumption by player and in total (over the office)
             energy_consumptions[player_name] = player_energy
@@ -667,6 +706,7 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
         Exceptions:
             raises AssertionError if action is not in the action space
         """
+        
         self.action = action
 
         if not self.action_space.contains(action):
@@ -682,18 +722,21 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
         self.day = (self.day + 1) % 365
         self.curr_iter += 1
         self.total_iter +=1
-        
 
         done = self.curr_iter > 0
 
         points = self._points_from_action(action)
 
-        if self.planning_step_cnt > self.planning_steps:
+        if self.planning_steps < 1 or self.planning_step_cnt > self.planning_steps or self.num_real_steps <= self.planning_delay:
             # take a step in real
             self.is_step_in_real = True
             self.num_real_steps += 1
             self.planning_step_cnt = 0
             energy_consumptions = self._simulate_humans(points)
+            print("using real steps")
+            if self.num_real_steps == self.planning_delay:
+                self.swap_to_ANN()
+                self.planning_steps = self.orig_planning_steps
         else: 
             self.planning_step_cnt += 1
             # take a step in planning
