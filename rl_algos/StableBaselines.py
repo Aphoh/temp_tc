@@ -449,9 +449,10 @@ def get_agent(env, args, non_vec_env=None):
             config["env"] = env
             config["env_config"] = vars(args)
             config["framework"]="tf"
-            config["learning_starts"]=config["train_batch_size"]
+            config["train_batch_size"]=args.rllib_train_batch_size
+            config["learning_starts"]=0#config["train_batch_size"]
             if args.save_transitions:
-                config["output"] = "sac_nosmirl_output_sim_data"
+                config["output"] = args.offline_data_path#"sac_nosmirl_output_sim_data"
                 config["output_max_file_size"] = 5000000
             #config["postprocess_inputs"]=True
             config["input"] = {}
@@ -936,6 +937,17 @@ def parse_args():
         type=int,
         default=0
     )
+    parser.add_argument(
+        "--wandb_run_name",
+        help="Run name for wandb, defaults to wandb's human readable names",
+        type=str,
+        default=None
+    )
+    parser.add_argument(
+        "--rllib_train_batch_size",
+        type=int,
+        default=256
+    )
 
     args = parser.parse_args()
 
@@ -958,6 +970,8 @@ def main():
 
     if args.wandb:
         wandb.init(project="energy-demand-response-game", entity="social-game-rl")
+        if args.wandb_run_name:
+            wandb.run.name = args.wandb_run_name
         wandb.tensorboard.patch(root_logdir=args.log_path) # patching the logdir directly seems to work
         wandb.config.update(args)
 
