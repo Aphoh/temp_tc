@@ -83,6 +83,7 @@ class SocialGameEnv(gym.Env):
         self.person_type_string = person_type_string
         self.points_multiplier = points_multiplier
         self.last_energy_cost = None
+        self.add_last_cost = True
 
         self.day = 0
         self.days_of_week = [0, 1, 2, 3, 4]
@@ -376,7 +377,8 @@ class SocialGameEnv(gym.Env):
         self.last_smirl_reward = total_smirl_reward
         self.last_energy_reward = total_energy_reward
         self.last_energy_cost = 500 * (total_energy_cost / self.number_of_participants) * 0.001 # 500 hardcoded for now
-        self.costs.append(self.last_energy_cost)
+        if self.add_last_cost:
+            self.costs.append(self.last_energy_cost)
         return total_energy_reward + total_smirl_reward
 
     def step(self, action):
@@ -636,6 +638,7 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
         self.planning_step_cnt = 0
         self.num_real_steps = 0
         self.orig_planning_steps = self.planning_steps
+        self.oracle_noise = env_config["oracle_noise"]
         planning_type=env_config["planning_model"]
         self.planning_delay = env_config["planning_delay"]
         if planning_type == "OLS" or self.num_real_steps < self.planning_delay:
@@ -643,6 +646,8 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
             self.planning_model = self.OLS_model
         elif planning_type == "ANN":
             self.swap_to_ANN()
+        elif planning_type == "Noisy Oracle":
+            self.planning_model = self.NoisyOracle
         super().__init__(
             env_config=env_config,
         )
@@ -651,17 +656,20 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
         print("Using ANN planning model")
         self.planning_net = Net(10, 32, 10)
         self.planning_net.load_state_dict(torch.load("model_weights.pth"))
-        #self.planning_scaler = torch.load("model_scaler.pth")
         # Put loaded planning model into evaluation mode
         self.planning_net.eval()
         self.planning_model = lambda action: self.planning_net(
             torch.tensor(action.reshape([-1, 10]))).detach().numpy().flatten()
-        #self.planning_scaler.inverse_transform(self.planning_net(
-            #torch.tensor(action.reshape([-1, 10]))).detach().numpy().reshape([-1,1 ])).flatten()
 
     def OLS_model(self, action):
         return 86 + (5 * (action - 5))
+
+    def Oracle(self, action):
+        return self._simulate_humans(action)
     
+    def NoisyOracle(self, action):
+        orig_consumptions = self.Oracle(action)
+        return orig_consumptions["avg"] + np.random.randn(10) * self.oracle_noise
         
     def _simulate_humans_planning_model(self, action):
         """
@@ -727,7 +735,7 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
 
         points = self._points_from_action(action)
 
-        if self.planning_steps < 1 or self.planning_step_cnt > self.planning_steps or self.num_real_steps <= self.planning_delay:
+        if any([self.planning_steps < 1, self.planning_step_cnt > self.planning_steps, self.num_real_steps <= self.planning_delay]):
             # take a step in real
             self.is_step_in_real = True
             self.num_real_steps += 1
@@ -759,3 +767,150 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
     def decay_ratio(self):
         """Decays the ratio of planning steps to target steps, meant to be used between calls to train()"""
         self.planning_steps *= self.decay
+
+class SocialGameEnvRLLibExtreme(SocialGameEnvRLLibPlanning):
+    def __init__(self, env_config):
+        self.ma_smoothing = env_config["MA_smoothing"]
+        self.extreme_intervention_rarity = env_config["extreme_intervention_rarity"]
+        super().__init__(env_config)
+
+    def step(self, action):
+        """
+        Purpose: Takes a step in the environment
+
+        Args:
+            Action: 10-dim vector detailing player incentive for each hour (8AM - 5PM)
+
+        Returns:
+            Observation: State for the next day
+            Reward: Reward for said action
+            Done: Whether or not the day is done (should always be True b/c of 1-step trajectory)
+            Info: Other info (primarily for gym env based library compatibility)
+
+        Exceptions:
+            raises AssertionError if action is not in the action space
+        """
+        
+        self.action = action
+
+        if not self.action_space.contains(action):
+            print("made it within the if statement in SG_E that tests if the action space doesn't have the action")
+            action = np.asarray(action)
+            if self.action_space_string == 'continuous':
+                action = np.clip(action, -1, 1) #TODO: check if correct
+
+            elif self.action_space_string == 'multidiscrete':
+                action = np.clip(action, 0, self.action_subspace - 1)
+
+        prev_price = self.prices[(self.day)]
+        self.day = (self.day + 1) % 365
+        self.curr_iter += 1
+        self.total_iter +=1
+
+        done = self.curr_iter > 0
+
+        points = self._points_from_action(action)
+        predicted_energy_consumptions = self._simulate_humans_planning_model(points)
+        predicted_energy_cost = np.dot(predicted_energy_consumptions["avg"], prev_price) * 0.001 * 500
+        smooth_param = min(self.ma_smoothing, len(self.costs))
+        avg_energy_costs = np.array(self.costs[-smooth_param:])
+        avg_energy_cost = avg_energy_costs.mean()
+        std_energy_cost = avg_energy_costs.std()
+        tou = 0.103 * np.ones((10))
+        tou[5:8] = self.manual_tou_magnitude
+        tou_points = self._points_from_action(tou)
+        if any([self.planning_steps < 1, self.planning_step_cnt > self.planning_steps, self.num_real_steps <= self.planning_delay]):
+            # take a step in real
+            self.is_step_in_real = True
+            self.num_real_steps += 1
+            self.planning_step_cnt = 0
+            if self.num_real_steps > max(self.ma_smoothing, 5) and predicted_energy_cost > avg_energy_cost + self.extreme_intervention_rarity * std_energy_cost:
+                self.is_step_in_real = False
+                self.add_last_cost = False
+                #import pdb; pdb.set_trace()
+                energy_consumptions = predicted_energy_consumptions
+                # Send TOU pricing to target environment instead
+                tou_energy_consumptions = self._simulate_humans(tou_points)
+                reward = self._get_reward(prev_price, tou_energy_consumptions, reward_function=self.reward_function)
+                print("intervention activated. Predicted: {} vs Avg: {}".format(predicted_energy_cost, avg_energy_cost))
+            else:
+                self.add_last_cost = True
+                energy_consumptions = self._simulate_humans(points)
+                print("using real steps")
+            if self.num_real_steps == self.planning_delay:
+                self.swap_to_ANN()
+                self.planning_steps = self.orig_planning_steps
+        else: 
+            self.planning_step_cnt += 1
+            # take a step in planning
+            self.is_step_in_real = False
+            energy_consumptions = self._simulate_humans_planning_model(points)
+
+        # HACK ALERT. USING AVG ENERGY CONSUMPTION FOR STATE SPACE. this will not work if people are not all the same
+
+        self.prev_energy = energy_consumptions["avg"]
+
+        observation = self._get_observation()
+        reward = self._get_reward(prev_price, energy_consumptions, reward_function = self.reward_function)
+        if self.use_smirl:
+            self.buffer.add(observation)
+
+        info = {}
+        return observation, reward, done, info
+
+    def _get_reward(self, price, energy_consumptions, reward_function = "log_cost_regularized"):
+        """
+        Purpose: Compute reward given price signal and energy consumption of the office
+
+        Args:
+            Price: Price signal vector (10-dim)
+            Energy_consumption: Dictionary containing energy usage by player in the office and the average office energy usage
+
+        Returns:
+            Energy_consumption: Dictionary containing the energy usage by player and the average energy used in the office (key = "avg")
+            TODO: Does it actually return that?
+        """
+
+        total_energy_reward = 0
+        total_smirl_reward = 0
+        total_energy_cost = 0
+        for player_name in energy_consumptions:
+            if player_name != "avg":
+                # get the points output from players
+                player = self.player_dict[player_name]
+
+                # get the reward from the player's output
+                player_min_demand = player.get_min_demand()
+                player_max_demand = player.get_max_demand()
+                player_energy = energy_consumptions[player_name]
+                player_energy_cost = np.dot(player_energy, price)
+                player_reward = Reward(player_energy, price, player_min_demand, player_max_demand)
+                if reward_function == "scaled_cost_distance":
+                   player_ideal_demands = player_reward.ideal_use_calculation()
+                   reward = player_reward.scaled_cost_distance(player_ideal_demands)
+
+                elif reward_function == "log_cost_regularized":
+                   reward = player_reward.log_cost_regularized()
+
+                elif reward_function == "log_cost":
+                    reward = player_reward.log_cost()
+
+                else:
+                    print("Reward function not recognized")
+                    raise AssertionError
+
+                total_energy_reward += reward
+                total_energy_cost += player_energy_cost
+        total_energy_reward = total_energy_reward / self.number_of_participants
+
+        if self.use_smirl:
+            smirl_rew = self.buffer.logprob(self._get_observation())
+            total_smirl_reward = self.smirl_weight * np.clip(smirl_rew, -300, 300)
+
+        
+        self.last_smirl_reward = total_smirl_reward
+        self.last_energy_reward = total_energy_reward
+        self.last_energy_cost = 500 * (total_energy_cost / self.number_of_participants) * 0.001 # 500 hardcoded for now
+        if self.add_last_cost:
+            self.costs.append(self.last_energy_cost)
+        return total_energy_reward + total_smirl_reward

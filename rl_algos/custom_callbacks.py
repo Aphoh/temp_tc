@@ -66,7 +66,7 @@ class CustomCallbacks(DefaultCallbacks):
             self.log_vals["step"].append(step_i)        
 
         # TODO: Implement logging for planning_env 
-        if hasattr(socialgame_env, "planning_steps") and socialgame_env.planning_steps > 0: 
+        if hasattr(socialgame_env, "is_step_in_real"):
             if socialgame_env.is_step_in_real:
                 print("Logging real step: ", self.steps_since_save)
                 self.log_vals["step"].append(socialgame_env.num_real_steps)

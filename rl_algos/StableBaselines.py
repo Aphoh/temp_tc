@@ -17,7 +17,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.env_checker import check_env
 
 import gym_socialgame.envs.utils as env_utils
-from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv, SocialGameEnvRLLibPlanning)
+from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv, SocialGameEnvRLLibPlanning, SocialGameEnvRLLibExtreme)
 
 import gym_microgrid.envs.utils as env_utils
 from gym_microgrid.envs.microgrid_env import MicrogridEnvRLLib
@@ -442,6 +442,9 @@ def get_agent(env, args, non_vec_env=None):
             if args.gym_env=="planning_dagger":
                 env = SocialGameEnvRLLibPlanning
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
+            elif args.gym_env=="extreme_intervention":
+                env = SocialGameEnvRLLibExtreme
+                obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
             else:
                 env = SocialGameEnvRLLib
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
@@ -641,9 +644,9 @@ def parse_args():
     )
     parser.add_argument(
         "--gym_env", 
-        help="Which Gym Environment you wihs to use",
+        help="Which Gym Environment you wish to use",
         type=str,
-        choices=["socialgame", "microgrid", "planning", "planning_dagger"],
+        choices=["socialgame", "microgrid", "planning", "planning_dagger", "extreme_intervention"],
         default="socialgame"
     )
     parser.add_argument(
@@ -763,7 +766,7 @@ def parse_args():
         help="Which planning model to use (OLS and ANN are only ones currently implemented)",
         type=str,
         default="Oracle",
-        choices=["Oracle", "Baseline", "LSTM", "OLS", "ANN"],
+        choices=["Oracle", "Baseline", "LSTM", "OLS", "ANN", "Noisy Oracle"],
     )
     parser.add_argument(
         "--pricing_type",
@@ -947,6 +950,24 @@ def parse_args():
         "--rllib_train_batch_size",
         type=int,
         default=256
+    )
+    parser.add_argument(
+        "--MA_smoothing",
+        help="Smoothing parameter for moving average computed for extreme event intervention (number of past costs to keep)",
+        type=int,
+        default=5
+    )
+    parser.add_argument(
+        "--extreme_intervention_rarity",
+        help="Number of standard deviations for a cost to be classified as unusually high",
+        type=float,
+        default=1
+    )
+    parser.add_argument(
+        "--oracle_noise",
+        help = "Noise to add to Oracle planning model predictions",
+        type=float,
+        default=0
     )
 
     args = parser.parse_args()

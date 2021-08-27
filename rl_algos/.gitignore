@@ -1,4 +1,8 @@
-logs/
+/logs
 /ppo_output_sim_data
 /sac_output_sim_data2
 /offline_data
+/maml_ckpts
+/ppo_ckpts
+/sac_ckpts
+*.ckpt
