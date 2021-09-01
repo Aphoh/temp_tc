@@ -766,7 +766,7 @@ def parse_args():
         help="Which planning model to use (OLS and ANN are only ones currently implemented)",
         type=str,
         default="Oracle",
-        choices=["Oracle", "Baseline", "LSTM", "OLS", "ANN", "Noisy Oracle"],
+        choices=["Oracle", "Baseline", "LSTM", "OLS", "ANN", "Noisy_Oracle"],
     )
     parser.add_argument(
         "--pricing_type",
@@ -969,10 +969,26 @@ def parse_args():
         type=float,
         default=0
     )
+    parser.add_argument(
+        "--planning_ckpt",
+        help="Checkpoint to use for planning model ANN",
+        type=str,
+        default="model_weights.pth"
+    )
+    parser.add_argument("--planning_num_data",
+        help="Does nothing, included as a parameter so wandb logs it",
+        type=int,
+        default=0)
+    parser.add_argument("--oracle_noise_type",
+        help="What kind of distribution the noise is sampled from",
+        type=str, 
+        choices=['uniform', 'normal'],
+        default='normal')
 
     args = parser.parse_args()
-
-    args.log_path = os.path.join(os.path.abspath(args.base_log_dir), "{}_{}".format(args.exp_name, str(dt.datetime.today())))
+    curr_datetime = str(dt.datetime.today())
+    curr_datetime = ''.join(e for e in curr_datetime if e.isalnum())
+    args.log_path = os.path.join(os.path.abspath(args.base_log_dir), "{}_{}".format(args.exp_name, curr_datetime))
 
     os.makedirs(args.log_path, exist_ok=True)
 

@@ -4,8 +4,9 @@ import os
 import numpy as np
 from matplotlib.pyplot import figure
 import matplotlib
-
 log_dir = "logs/"
+csv = "wandb_export.csv"
+df = pd.read_csv(csv)
 log_names = os.listdir(log_dir)
 matplotlib.rcParams.update({'font.size': 40})
 matplotlib.rcParams.update({'axes.linewidth': 2.0})
@@ -27,8 +28,8 @@ prefixes = {
 # for ckpt in [50, 100, 200, 400, 600]:
 #     prefixes["Checkpoint {}".format(ckpt)] = "pretrained_sac_nosmirl_nodagger{" + str(ckpt) + "}_ckpt"
 initial = {
-    "Offline-Online SAC": "pretrained_sac_nosmirl_nodagger_redo_initial",
-    "Vanilla SAC": "vanilla_sac_nodagger_initial"
+    #"Offline-Online SAC": "pretrained_sac_nosmirl_nodagger_redo_initial",
+    #"Vanilla SAC": "vanilla_sac_nodagger_initial"
 }
 graphs = { exp_name: 
     [os.path.join(log_dir, log_name, "progress.csv") for log_name in log_names if log_name[:len(prefix)] == prefix and log_name[len(prefix)].isdigit() ] 
@@ -116,13 +117,57 @@ def plot_graph(ax, label, paths):
     ax.fill_between(steps, means - ste, means + ste, alpha=0.2)
     return steps
     #ax.plot(steps, energy_costs, label=label)
+def is_energy_cost(name):
+    return "energy_cost_mean" in name and "MIN" not in name and "MAX" not in name
 
+def plot_graph(ax, df):
+    names = df.columns.values
+    grp1 = []
+    
+    grp2 = []
+    grp2_arr = []
+    for name in names:
+        if is_energy_cost(name) and "sac_ckpts" not in name:
+            grp2.append(name)
+            temp_df = df[["ray/tune/info/num_steps_sampled", name]]
+            temp_df = temp_df.dropna()
+            steps2 = df["ray/tune/info/num_steps_sampled"]
+            grp2_arr.append(temp_df[name].to_numpy())
+    grp2.append("ray/tune/info/num_steps_sampled")
+    bigdf = df[grp2]
+    bigdf = bigdf.dropna()
+    steps2 = bigdf["ray/tune/info/num_steps_sampled"].to_numpy()
+    grp2_arr = bigdf.drop("ray/tune/info/num_steps_sampled", axis=1).to_numpy()
+    print(steps2.shape, grp2_arr.shape)
+    df1 = df[["ray/tune/info/num_steps_sampled", "checkpoint: rl_algos/sac_ckpts/dashing-puddle-1030700.ckpt - ray/tune/custom_metrics/energy_cost_mean", "checkpoint: rl_algos/sac_ckpts/dashing-puddle-1030700.ckpt - ray/tune/custom_metrics/energy_cost_mean__MAX"]]
+    df1 = df1.dropna()
+    means1 = df1["checkpoint: rl_algos/sac_ckpts/dashing-puddle-1030700.ckpt - ray/tune/custom_metrics/energy_cost_mean"]
+    ste1 = (df1["checkpoint: rl_algos/sac_ckpts/dashing-puddle-1030700.ckpt - ray/tune/custom_metrics/energy_cost_mean__MAX"] - means1)*250
+    ste1 = ste1.to_numpy()
+    means1 = 250*(means1.to_numpy() + 40)
+    means2 = (grp2_arr.mean(axis=1)+40) * 250
+    ste2 = (grp2_arr.std(axis=1)/np.sqrt(5)) * 250
+    steps = df1["ray/tune/info/num_steps_sampled"]
+    idx = steps < x_cap
+    idx2 = steps2 < x_cap
+    means1 = means1[idx]
+    ste1 = ste1[idx]
+    means2 = means2[idx2]
+    ste2 = ste2[idx2]
+    steps = steps[idx]
+    steps2 = steps2[idx2]
+    
+    ax.plot(steps, means1,  label="Offline-Online SAC", linewidth=3.0)
+    ax.fill_between(steps, means1 - ste1, means1 + ste1, alpha=0.2)
+    ax.plot(steps2, means2,  label="Vanilla SAC", linewidth=3.0)
+    ax.fill_between(steps2, means2 - ste2, means2 + ste2, alpha=0.2)
 def plot_baselines(ax, steps):
     ax.plot(steps, np.array([(75 + 40) * 250 for step in steps]), label="TOU", linewidth=3.0)
     ax.plot(steps, np.array([(120) * 250 for step in steps]), label="Flat", linewidth=3.0)
 fig, ax = plt.subplots(figsize=(30, 20))
-for label, paths in graphs.items():
-    steps = plot_graph(ax, label, paths)
+plot_graph(ax, df)
+# for label, paths in graphs.items():
+#     steps = plot_graph(ax, label, paths)
 
 plot_baselines(ax, list(range(x_cap)))
 ax.spines['right'].set_visible(False)

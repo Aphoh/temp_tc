@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import pandas as pd
+import os
 
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, Dataset
@@ -210,10 +211,12 @@ def get_datasets(train_size, val_size):
 	#                         [0,0,1,0,0,0,0,0,0,1],
 	#                         [0,0,0,1,0,0,0,0,0,0],
 	#                         [0,0,0,1,0,0,0,0,0,0]])
-	square_waves = np.random.uniform(size=[train_size, 10])
-	square_waves /= np.sum(square_waves, axis=-1, keepdims=True)
-	validation_waves = np.random.uniform(size=[val_size, 10])
-	validation_waves = validation_waves  / np.sum(validation_waves, axis=-1, keepdims=True)
+	#square_waves = np.random.uniform(size=[train_size, 10])
+	square_waves = np.random.lognormal(0, 1, size=[train_size, 10])
+	#square_waves /= np.sum(square_waves, axis=-1, keepdims=True)
+	#validation_waves = np.random.uniform(size=[val_size, 10])
+	#validation_waves = validation_waves  / np.sum(validation_waves, axis=-1, keepdims=True)
+	validation_waves = np.random.lognormal(0, 1, size=[val_size, 10])
 	validation_data = []
 
 	for day in range(square_waves.shape[0]):
@@ -235,6 +238,7 @@ class Net(torch.nn.Module):
 		super(Net, self).__init__()
 		self.first_layer = nn.Linear(n_feature, n_hidden)
 		self.hiddens = nn.ModuleList([nn.Linear(n_hidden, n_hidden) for _ in range(n_layers)])
+		self.batchnorms = nn.ModuleList([nn.BatchNorm1d(n_hidden) for _ in range(n_layers)])
 		#self.hidden = torch.nn.Linear(n_feature, n_hidden)
 		#self.hidden2 = torch.nn.Linear(n_hidden, n_hidden)
 		#self.hidden3 = torch.nn.Linear(n_hidden, n_hidden)  
@@ -242,8 +246,9 @@ class Net(torch.nn.Module):
 
 	def forward(self, x):
 		x = F.relu(self.first_layer(x))
-		for hidden in self.hiddens:
-			x = hidden(x)
+		for hidden, batchnorm in zip(self.hiddens, self.batchnorms):
+			x = batchnorm(x)
+			x = F.relu(hidden(x)) + x
 		x = self.predict_layer(x)
 		#x = F.relu(self.hidden(x))      
 		#x = F.relu(self.hidden2(x))
@@ -382,20 +387,23 @@ best_final_std = None
 best_stds = []
 best_val_losses = []
 best_val_abs_losses = []
+ckpt_folder = "./planning_ckpts_diverse/"
 for n_network in n_networks:
 	for weight_decay in weight_decays:
 		for n_train_data in n_train_datas:
+
 			n_hidden=64
 			#square_waves, validation_waves, output_data_normalized, val_data_normalized = get_datasets(n_train_data, 256)
 
 			n_layer=5 
 			net = EnsembleModule(n_feature=10, n_hidden=n_hidden, n_output=10, n_layers=n_layer, n_networks=n_network, lr=3e-4)
 			data = LitData(n_train_data, 512, batch_size=256)
-			logger = pl.loggers.WandbLogger(project='energy-demand-planning-model', entity='social-game-rl', reinit=True, tags=["big_network", "even_more_patience"])
+			save_folder = os.path.join(ckpt_folder, str(n_train_data))
+			logger = pl.loggers.WandbLogger(project='energy-demand-planning-model', entity='social-game-rl', reinit=True, tags=["big_network", "even_more_patience2"])
 			early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=0.00, patience=50, divergence_threshold=100000, verbose=True, mode="min")
 			checkpoint_callback = ModelCheckpoint(
 				monitor="val_loss",
-				dirpath="./planning_logs/",
+				dirpath=save_folder,
 				mode="min",
 			)
 			logger.log_hyperparams({"n_train_data": n_train_data})
@@ -411,3 +419,5 @@ for n_network in n_networks:
 
 
 
+
+# %%

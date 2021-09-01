@@ -9,7 +9,7 @@ from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
 from gym_socialgame.envs.buffers import (GaussianBuffer, GaussianCircularBuffer)
 
-from gym_socialgame.envs.planning_net import Net
+from gym_socialgame.envs.planning_net import EnsembleModule, Net
 
 from sklearn.preprocessing import MinMaxScaler
 
@@ -639,27 +639,35 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
         self.num_real_steps = 0
         self.orig_planning_steps = self.planning_steps
         self.oracle_noise = env_config["oracle_noise"]
-        planning_type=env_config["planning_model"]
+        self.oracle_noise_type = env_config["oracle_noise_type"]
+        self.planning_model_path = env_config["planning_ckpt"]
+        self.planning_type=env_config["planning_model"]
         self.planning_delay = env_config["planning_delay"]
-        if planning_type == "OLS" or self.num_real_steps < self.planning_delay:
+        self.predicted_costs = []
+        if self.planning_type == "OLS" or self.num_real_steps < self.planning_delay:
             print("Using OLS planning model")
             self.planning_model = self.OLS_model
-        elif planning_type == "ANN":
+        elif self.planning_type == "ANN":
             self.swap_to_ANN()
-        elif planning_type == "Noisy Oracle":
+        elif self.planning_type == "Noisy_Oracle":
             self.planning_model = self.NoisyOracle
         super().__init__(
             env_config=env_config,
         )
 
+
     def swap_to_ANN(self):
         print("Using ANN planning model")
-        self.planning_net = Net(10, 32, 10)
-        self.planning_net.load_state_dict(torch.load("model_weights.pth"))
+        #self.planning_net = Net(10, 32, 10)
+        #self.planning_net.load_state_dict(torch.load(self.planning_model_path))
+        self.planning_net = EnsembleModule.load_from_checkpoint(self.planning_model_path, n_feature=10, n_output=10, n_hidden=64, n_layers=5, n_networks=24, lr=3e-4).model
         # Put loaded planning model into evaluation mode
         self.planning_net.eval()
-        self.planning_model = lambda action: self.planning_net(
-            torch.tensor(action.reshape([-1, 10]))).detach().numpy().flatten()
+        def model_wrapper_fn(action):
+            out, std = self.planning_net(torch.tensor(action.reshape([-1, 10])))
+            out = out.detach().numpy().flatten()
+            return out, std
+        self.planning_model = model_wrapper_fn
 
     def OLS_model(self, action):
         return 86 + (5 * (action - 5))
@@ -669,7 +677,10 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
     
     def NoisyOracle(self, action):
         orig_consumptions = self.Oracle(action)
-        return orig_consumptions["avg"] + np.random.randn(10) * self.oracle_noise
+        if self.oracle_noise_type=="normal":
+            return orig_consumptions["avg"] + np.random.randn(10) * self.oracle_noise
+        elif self.oracle_noise_type=="uniform":
+            return orig_consumptions["avg"] + np.random.uniform(low=-1.0, high=1.0, size=(10,)) * self.oracle_noise
         
     def _simulate_humans_planning_model(self, action):
         """
@@ -688,9 +699,12 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
         for player_name in self.player_dict:
             #Get players response to agent's actions
             player = self.player_dict[player_name]
-
-            player_energy = self.planning_model(action)
-
+            if self.planning_type == "ANN":
+                player_energy, std = self.planning_model(action)
+                self.last_std = std
+            else:
+                player_energy = self.planning_model(action)
+ 
             #Calculate energy consumption by player and in total (over the office)
             energy_consumptions[player_name] = player_energy
             total_consumption += player_energy
@@ -812,13 +826,16 @@ class SocialGameEnvRLLibExtreme(SocialGameEnvRLLibPlanning):
         points = self._points_from_action(action)
         predicted_energy_consumptions = self._simulate_humans_planning_model(points)
         predicted_energy_cost = np.dot(predicted_energy_consumptions["avg"], prev_price) * 0.001 * 500
+        self.predicted_costs.append(predicted_energy_cost)
         smooth_param = min(self.ma_smoothing, len(self.costs))
-        avg_energy_costs = np.array(self.costs[-smooth_param:])
+        #avg_energy_costs = np.array(self.costs[-smooth_param:])
+        avg_energy_costs = np.array(self.predicted_costs[-smooth_param:])
         avg_energy_cost = avg_energy_costs.mean()
         std_energy_cost = avg_energy_costs.std()
         tou = 0.103 * np.ones((10))
         tou[5:8] = self.manual_tou_magnitude
         tou_points = self._points_from_action(tou)
+        self.record_last_cost = True
         if any([self.planning_steps < 1, self.planning_step_cnt > self.planning_steps, self.num_real_steps <= self.planning_delay]):
             # take a step in real
             self.is_step_in_real = True
@@ -832,6 +849,7 @@ class SocialGameEnvRLLibExtreme(SocialGameEnvRLLibPlanning):
                 # Send TOU pricing to target environment instead
                 tou_energy_consumptions = self._simulate_humans(tou_points)
                 reward = self._get_reward(prev_price, tou_energy_consumptions, reward_function=self.reward_function)
+                self.record_last_cost = False # make this cost get logged instead of the one from the planning model
                 print("intervention activated. Predicted: {} vs Avg: {}".format(predicted_energy_cost, avg_energy_cost))
             else:
                 self.add_last_cost = True
@@ -910,7 +928,8 @@ class SocialGameEnvRLLibExtreme(SocialGameEnvRLLibPlanning):
         
         self.last_smirl_reward = total_smirl_reward
         self.last_energy_reward = total_energy_reward
-        self.last_energy_cost = 500 * (total_energy_cost / self.number_of_participants) * 0.001 # 500 hardcoded for now
+        if self.record_last_cost:
+            self.last_energy_cost = 500 * (total_energy_cost / self.number_of_participants) * 0.001 # 500 hardcoded for now
         if self.add_last_cost:
             self.costs.append(self.last_energy_cost)
         return total_energy_reward + total_smirl_reward

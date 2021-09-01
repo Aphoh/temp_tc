@@ -1,0 +1,36 @@
+early_terminate:
+  eta: 3
+  max_iter: 4000
+  s: 2
+  type: hyperband
+method: grid
+metric:
+  goal: minimize
+  name: ray/tune/custom_metrics/energy_cost_mean
+name: Extreme Intervention Sweep
+program: rl_algos/StableBaselines.py
+parameters:
+  MA_smoothing:
+    values: [10]
+  extreme_intervention_rarity:
+    values: [0, 0.1, 0.2, 0.5, 0.75, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0]
+  oracle_noise:
+    values: [5, 10, 20, 30, 40, 50, 60, 70, 80, 90]
+command:
+  - ${env}
+  - python
+  - ${program}
+  - "-w"
+  - "--library=rllib"
+  - "--num_steps=150"
+  - "--algo=sac" 
+  - "--checkpoint_interval=50"
+  - "--gym_env=extreme_intervention"
+  - "--bulk_log_interval=50" 
+  - "--ignore_warnings"
+  - "--base_log_dir=./logs/"
+  - "--planning_steps=0"
+  - "--dagger_decay=1"
+  - "--planning_model=Noisy_Oracle"
+  - "--oracle_noise_type=uniform"
+  - ${args}
