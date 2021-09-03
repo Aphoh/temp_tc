@@ -387,7 +387,7 @@ best_final_std = None
 best_stds = []
 best_val_losses = []
 best_val_abs_losses = []
-ckpt_folder = "./planning_ckpts_diverse/"
+ckpt_folder = "./planning_ckpts_diverse2/"
 for n_network in n_networks:
 	for weight_decay in weight_decays:
 		for n_train_data in n_train_datas:
@@ -397,7 +397,7 @@ for n_network in n_networks:
 
 			n_layer=5 
 			net = EnsembleModule(n_feature=10, n_hidden=n_hidden, n_output=10, n_layers=n_layer, n_networks=n_network, lr=3e-4)
-			data = LitData(n_train_data, 512, batch_size=256)
+			data = LitData(n_train_data, 512, batch_size=2048)
 			save_folder = os.path.join(ckpt_folder, str(n_train_data))
 			logger = pl.loggers.WandbLogger(project='energy-demand-planning-model', entity='social-game-rl', reinit=True, tags=["big_network", "even_more_patience2"])
 			early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=0.00, patience=50, divergence_threshold=100000, verbose=True, mode="min")
@@ -407,7 +407,7 @@ for n_network in n_networks:
 				mode="min",
 			)
 			logger.log_hyperparams({"n_train_data": n_train_data})
-			trainer = pl.Trainer(gpus=1, auto_lr_find=True, logger=logger, callbacks=[checkpoint_callback, early_stop_callback], max_epochs=10000, min_epochs=100)
+			trainer = pl.Trainer(gpus=1, auto_lr_find=True, logger=logger, callbacks=[checkpoint_callback, early_stop_callback], max_epochs=10000, min_epochs=50)
 			logger.experiment.define_metric("train_loss", summary="min")
 			logger.experiment.define_metric("val_loss", summary="min")
 			logger.experiment.define_metric("train_abs_loss", summary="min")

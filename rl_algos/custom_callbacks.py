@@ -4,6 +4,7 @@ Here we use callbacks to track the average CartPole pole angle magnitude as a
 custom metric.
 """
 
+from pdb import set_trace
 from typing import Dict
 import numpy as np
 import pandas as pd
@@ -18,7 +19,7 @@ from ray.rllib.policy.sample_batch import SampleBatch
 
 class CustomCallbacks(DefaultCallbacks):
 
-    def __init__(self, log_path, save_interval, obs_dim=10):
+    def __init__(self, log_path, save_interval, obs_dim=10, planning_model=None, env=None, args=None):
         super().__init__()
         self.log_path=log_path
         self.save_interval=save_interval
@@ -28,6 +29,9 @@ class CustomCallbacks(DefaultCallbacks):
         self.obs_dim = obs_dim
         self.log_vals = {k: [] for k in self.cols}
         self.log_path=log_path
+        self.planning_model=planning_model
+        self.env = env
+        self.args = args
 
     def save(self):
         log_df=pd.DataFrame(data=self.log_vals)
@@ -41,7 +45,6 @@ class CustomCallbacks(DefaultCallbacks):
     def on_episode_start(self, *, worker: RolloutWorker, base_env: BaseEnv,
                          policies: Dict[str, Policy],
                          episode: MultiAgentEpisode, env_index: int, **kwargs):
-
         socialgame_env = base_env.get_unwrapped()[0]
         if socialgame_env.use_smirl:
             episode.user_data["smirl_reward"] = []
@@ -56,9 +59,10 @@ class CustomCallbacks(DefaultCallbacks):
         episode.user_data["real_step"] = []
         episode.hist_data["real_step"] = []
 
+        episode.user_data["predicted_costs"] = []
+
     def on_episode_step(self, *, worker: RolloutWorker, base_env: BaseEnv,
                         episode: MultiAgentEpisode, env_index: int, **kwargs):
-
         socialgame_env = base_env.get_unwrapped()[0]
 
         step_i = socialgame_env.total_iter
@@ -107,8 +111,7 @@ class CustomCallbacks(DefaultCallbacks):
                         self.log_vals["observation_" + str(i)].append(np.nan)
 
                 self.steps_since_save += 1
-                if self.steps_since_save == self.save_interval:
-                    self.save()
+                
         else:
             if socialgame_env.use_smirl and socialgame_env.last_smirl_reward:
                 smirl_rew = socialgame_env.last_smirl_reward
@@ -146,9 +149,6 @@ class CustomCallbacks(DefaultCallbacks):
                     self.log_vals["observation_" + str(i)].append(np.nan)
 
             self.steps_since_save += 1
-            if self.steps_since_save == self.save_interval:
-                self.save()
-
         return
 
     def on_episode_end(self, *, worker: RolloutWorker, base_env: BaseEnv,
@@ -181,5 +181,39 @@ class CustomCallbacks(DefaultCallbacks):
             episode.custom_metrics["num_batches"] = 0
 
         episode.custom_metrics["num_batches"] += 1
+        if len(postprocessed_batch) > 1:
+            print("Error: trajectories larger than 1")
+            import pdb; pdb.set_trace()
+        if self.planning_model != None:
+            # Assumes length of trajectory is 1
+            actions = postprocessed_batch["actions"]
+            rewards = postprocessed_batch["rewards"]
+            predicted_consumption, _ = self.planning_model(actions) # TODO, SEE WHAT SAMPLEBATCH ACTUALLY IS
+            tou = 0.103 * np.ones((10), dtype=np.float32)
+            tou[5:8] = self.args.manual_tou_magnitude
+            _, tou_rewards, _, _ = self.env.step(tou)
+            tou_cost = 75#self.env.last_energy_cost
+            predicted_costs = (np.dot(predicted_consumption, self.env.prices[self.env.day].squeeze()) / self.env.number_of_participants) * 500 * 0.001
+            episode.custom_metrics["predicted_costs"] = predicted_costs
+            if predicted_costs > tou_cost:
+            #if True:
+                print("Replacing...")
+                postprocessed_batch["rewards"] = tou_rewards.reshape(rewards.shape)
+                postprocessed_batch["actions"] = tou.reshape(actions.shape)
+                actions[:] = tou
+                #Revise the logs if the intervention is necessary
+                #WARNING: WILL NOT CORRECTLY LOG SMIRL REWARDS
+                if "energy_reward" in self.log_vals and len(self.log_vals["energy_reward"]) > 0:
+                    episode.user_data["energy_reward"][-1] = tou_rewards
+                    episode.hist_data["energy_reward"][-1] = tou_rewards
+                    self.log_vals["energy_reward"][-1] = tou_rewards
+
+                if "energy_cost" in self.log_vals and len(self.log_vals["energy_cost"]) > 0:
+                    episode.user_data["energy_cost"][-1] = tou_cost
+                    episode.hist_data["energy_cost"][-1] = tou_cost
+                    self.log_vals["energy_cost"][-1] = tou_cost
+        if self.steps_since_save >= self.save_interval:
+                self.save()
+        
         return
 

@@ -439,7 +439,10 @@ def get_agent(env, args, non_vec_env=None):
             return trainer
 
         elif args.algo == "sac" or args.algo == "warm_sac":
-            if args.gym_env=="planning_dagger":
+            if args.gym_env=="planning":
+                env = SocialGameEnvRLLibPlanning
+                obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
+            elif args.gym_env=="planning_dagger":
                 env = SocialGameEnvRLLibPlanning
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
             elif args.gym_env=="extreme_intervention":
@@ -461,7 +464,11 @@ def get_agent(env, args, non_vec_env=None):
             config["input"] = {}
             
             out_path = os.path.join(args.log_path, "bulk_data.h5")
-            callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim)
+            if args.tou_replacement:
+                dummy_env = env(config["env_config"])
+                callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim, planning_model=dummy_env.planning_model, env=dummy_env, args=args)
+            else:
+                callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim)
             config["callbacks"] = lambda: callbacks
             logger_creator = utils.custom_logger_creator(args.log_path)
             callbacks.save()
@@ -984,7 +991,10 @@ def parse_args():
         type=str, 
         choices=['uniform', 'normal'],
         default='normal')
-
+    parser.add_argument("--tou_replacement",
+        help="Train with the planning model prediction of action or replace action with TOU",
+        action="store_true",
+        default=False)
     args = parser.parse_args()
     curr_datetime = str(dt.datetime.today())
     curr_datetime = ''.join(e for e in curr_datetime if e.isalnum())
