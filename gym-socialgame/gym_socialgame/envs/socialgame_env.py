@@ -678,9 +678,11 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
     def NoisyOracle(self, action):
         orig_consumptions = self.Oracle(action)
         if self.oracle_noise_type=="normal":
-            return orig_consumptions["avg"] + np.random.randn(10) * self.oracle_noise
+            output = orig_consumptions["avg"] + np.random.randn(10) * self.oracle_noise
         elif self.oracle_noise_type=="uniform":
-            return orig_consumptions["avg"] + np.random.uniform(low=-1.0, high=1.0, size=(10,)) * self.oracle_noise
+            output = orig_consumptions["avg"] + np.random.uniform(low=-1.0, high=1.0, size=(10,)) * self.oracle_noise
+        output[output <= 0] = 1e-8 + np.random.uniform(low=1e-8, high=1e-9, size=output[output <= 0].shape)
+        return output
         
     def _simulate_humans_planning_model(self, action):
         """
@@ -933,3 +935,82 @@ class SocialGameEnvRLLibExtreme(SocialGameEnvRLLibPlanning):
         if self.add_last_cost:
             self.costs.append(self.last_energy_cost)
         return total_energy_reward + total_smirl_reward
+
+
+class SocialGameEnvRLLibGuardRail(SocialGameEnvRLLibPlanning):
+    def __init__(self, env_config):
+        print("Using Guardrails")
+        self.predicted_costs = []
+        super().__init__(env_config)
+
+    def step(self, action):
+        """
+        Purpose: Takes a step in the environment
+
+        Args:
+            Action: 10-dim vector detailing player incentive for each hour (8AM - 5PM)
+
+        Returns:
+            Observation: State for the next day
+            Reward: Reward for said action
+            Done: Whether or not the day is done (should always be True b/c of 1-step trajectory)
+            Info: Other info (primarily for gym env based library compatibility)
+
+        Exceptions:
+            raises AssertionError if action is not in the action space
+        """
+        
+        self.action = action
+
+        if not self.action_space.contains(action):
+            print("made it within the if statement in SG_E that tests if the action space doesn't have the action")
+            action = np.asarray(action)
+            if self.action_space_string == 'continuous':
+                action = np.clip(action, -1, 1) #TODO: check if correct
+
+            elif self.action_space_string == 'multidiscrete':
+                action = np.clip(action, 0, self.action_subspace - 1)
+
+        prev_price = self.prices[(self.day)]
+        self.day = (self.day + 1) % 365
+        self.curr_iter += 1
+        self.total_iter +=1
+
+        done = self.curr_iter > 0
+
+        points = self._points_from_action(action)
+        predicted_energy_consumptions = self._simulate_humans_planning_model(points)
+        predicted_energy_cost = np.dot(predicted_energy_consumptions["avg"], prev_price) * 0.001 * 500
+        self.predicted_costs.append(predicted_energy_cost)
+        tou = 0.103 * np.ones((10))
+        tou[5:8] = self.manual_tou_magnitude
+        tou_points = self._points_from_action(tou)
+        tou_cost = 75
+        if predicted_energy_cost < tou_cost:
+            # take a step in real
+            self.is_step_in_real = True
+            self.num_real_steps += 1
+            self.planning_step_cnt = 0
+            energy_consumptions = self._simulate_humans(points)
+            print("using real steps")
+            if self.num_real_steps == self.planning_delay:
+                self.swap_to_ANN()
+                self.planning_steps = self.orig_planning_steps
+        else: 
+            self.planning_step_cnt += 1
+            # take a step in planning
+            self.is_step_in_real = False
+            energy_consumptions = self._simulate_humans_planning_model(points)
+
+        # HACK ALERT. USING AVG ENERGY CONSUMPTION FOR STATE SPACE. this will not work if people are not all the same
+
+        self.prev_energy = energy_consumptions["avg"]
+
+        observation = self._get_observation()
+        reward = self._get_reward(prev_price, energy_consumptions, reward_function = self.reward_function)
+
+        if self.use_smirl:
+            self.buffer.add(observation)
+
+        info = {}
+        return observation, reward, done, info

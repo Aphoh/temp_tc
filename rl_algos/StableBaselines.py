@@ -17,7 +17,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.env_checker import check_env
 
 import gym_socialgame.envs.utils as env_utils
-from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv, SocialGameEnvRLLibPlanning, SocialGameEnvRLLibExtreme)
+from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv, SocialGameEnvRLLibPlanning, SocialGameEnvRLLibExtreme, SocialGameEnvRLLibGuardRail)
 
 import gym_microgrid.envs.utils as env_utils
 from gym_microgrid.envs.microgrid_env import MicrogridEnvRLLib
@@ -448,6 +448,9 @@ def get_agent(env, args, non_vec_env=None):
             elif args.gym_env=="extreme_intervention":
                 env = SocialGameEnvRLLibExtreme
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
+            elif args.gym_env=="planning_guardrails":
+                env = SocialGameEnvRLLibGuardRail
+                obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
             else:
                 env = SocialGameEnvRLLib
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
@@ -653,7 +656,7 @@ def parse_args():
         "--gym_env", 
         help="Which Gym Environment you wish to use",
         type=str,
-        choices=["socialgame", "microgrid", "planning", "planning_dagger", "extreme_intervention"],
+        choices=["socialgame", "microgrid", "planning", "planning_dagger", "extreme_intervention", "planning_guardrails"],
         default="socialgame"
     )
     parser.add_argument(
