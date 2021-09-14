@@ -7,10 +7,14 @@ import wandb
 import os
 import datetime as dt
 import random
+import tensorflow as tf
 
-from stable_baselines3 import SAC, PPO
+from stable_baselines3 import SAC, PPO, DQN
 from stable_baselines3.sac.policies import MlpPolicy as SACMlpPolicy
 from stable_baselines3.ppo.policies import MlpPolicy as PPOMlpPolicy
+
+from stable_baselines3.dqn.policies.DQNPolicy import MlpPolicy as DQNpPolicy
+
 from stable_baselines3.common.vec_env import (DummyVecEnv, VecCheckNan, VecNormalize)
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.evaluation import evaluate_policy
@@ -21,10 +25,13 @@ from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMe
 
 import gym_microgrid.envs.utils as env_utils
 from gym_microgrid.envs.microgrid_env import MicrogridEnvRLLib
+from gym_microgrid.envs.microgrid_env import MultiAgentEnvRLLib
 
 import ray
 import ray.rllib.agents.ppo as ray_ppo
 import ray.rllib.agents.maml as ray_maml
+import ray.rllib.agents.DQN as ray_dqn
+
 from ray import tune
 from ray.tune.integration.wandb import (wandb_mixin, WandbLoggerCallback)
 from ray.tune.logger import (DEFAULT_LOGGERS, pretty_print, UnifiedLogger)
@@ -51,8 +58,70 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
     elif library=="tune":
 
         ray.init()
+        
+        """
+        Limitation: Our action space is continuous, while DQN only works with
+        discrete space for actions and observations.
+        https://stable-baselines3.readthedocs.io/en/master/modules/dqn.html"""
+        
 
-        if args.algo=="ppo":
+        if args.algo=="dqn":
+            config = ray_dqn.DEFAULT_CONFIG.copy()
+            framework: tf
+            double_q: true
+            dueling: true
+            num_atoms: 1
+            noisy: false
+            prioritized_replay: false
+            n_step: 1
+            target_network_update_freq: 8000
+            lr: .0000625
+            adam_epsilon: .00015
+            hiddens: [512]
+            learning_starts: 20000
+            buffer_size: 1000000
+            rollout_fragment_length: 4
+            exploration_config:
+              epsilon_timesteps: 200000
+              final_epsilon: 0.01
+            prioritized_replay_alpha: 0.5
+            final_prioritized_replay_beta: 1.0
+            prioritized_replay_beta_annealing_timesteps: 2000000
+            num_gpus: 0.2
+            timesteps_per_iteration: 10000
+            
+            config["framework"] = "tf"
+            config["double_q"] = True
+            config["dueling"] = True
+            config["env"] = SocialGameEnvRLLib
+            config["callbacks"] = CustomCallbacks
+            config["num_gpus"] = 1
+            config["num_workers"] = 4
+            config["env_config"] = vars(args)
+
+            config["lr"] = tune.uniform(0.003, 5e-6)
+            config["train_batch_size"] = tune.choice([4, 64, 256])
+            config["sgd_minibatch_size"] = tune.sample_from(lambda spec: random.choice([x for x in [2, 4, 16, 32] if 2*x <= spec.config.train_batch_size]))
+            config["clip_param"] = tune.choice([0.1, 0.2, 0.3])
+
+            def stopper(_, result):
+                return result["timesteps_total"] > num_steps
+
+            exp_dict = {
+                    'name': args.exp_name,
+                    'run_or_experiment': ray_dqn.DQNTrainer,
+                    'config': config,
+                    'num_samples': 12,
+                    'stop': stopper,
+                    'local_dir': os.path.abspath(args.base_log_dir)
+                }
+
+            analysis = tune.run(**exp_dict)
+            analysis.results_df.to_csv("POC results.csv")
+
+
+
+        elif args.algo=="ppo":
             config = ray_ppo.DEFAULT_CONFIG.copy()
             config["framework"] = "torch"
             config["env"] = SocialGameEnvRLLib
@@ -271,6 +340,18 @@ def get_agent(env, args, non_vec_env=None):
                     verbose=2,
                     n_steps=128,
                     tensorboard_log=args.log_path)
+                    
+        elif args.algo == "dqn":
+            return DQN(
+            policy = DQNpPolicy,
+            env = env,
+            batch_size=args.batch_size,
+            #need to decide on learning_starts and other param values for algo
+            """ Example of tuning hyperparams for DQN
+https://github.com/tensorflow/agents/blob/master/docs/tutorials/1_dqn_tutorial.ipynb
+            """
+
+            )
 
     elif args.library=="rllib" or args.library=="tune":
 
@@ -449,7 +530,7 @@ def parse_args():
         help="RL Algorithm",
         type=str,
         default="sac",
-        choices=["sac", "ppo", "maml", "uc_bandit"]
+        choices=["sac", "ppo", "maml", "dqn", "uc_bandit"]
     )
     parser.add_argument(
         "--base_log_dir",

@@ -9,6 +9,79 @@ from gym_microgrid.envs.utils import price_signal
 from gym_microgrid.envs.agents import *
 from gym_microgrid.envs.reward import Reward
 from gym_socialgame.envs.buffers import GaussianBuffer
+from ray.rllib.env.multi_agent_env import make_multi_agent, MultiAgentEnv #from ray-project
+
+
+from pymgrid import MicrogridGenerator as mg
+
+
+    """perhaps think of using Tianshou instead of RLLib? https://tianshou.readthedocs.io/en/latest/tutorials/tictactoe.html#train-an-marl-agent
+    
+    Note: Tried a lot of different approaches, including
+    1.discrete space and hardcoding lookup table
+    2.hardcoding multiagent environment
+    3.using from multiagent.core import World, Agent, Landmark, and using Scenarios
+    4. Tianshou
+    5. adversarial RL
+    However, even though all of them were pretty detailed, they did not
+    seem to work well with the pre-existing code in this repo, in terms of the continuous space, tuning parameters, and some were deprecated etc. Please test if the current
+    rllib multiagent env setup works. If not, or if Lucas's
+    implementation doesn't work either, will try to overhaul existing
+    conditions of the agent and action space and use one of the libraries listed above (have some code for each)
+    
+    If multiagent RL working, then connecting prosumer microgrids not
+    needed. Otherwise attempt (1) DQN multiagent RL--challenging, wasn't
+    able to find a solution to this, but added the DQN algo to stablebaselines (2) generate microgrids--doesn't PPO
+    ready do this? How to separate self into 2 sep microgrid environments
+    with at least 1 distinct property--needs discussion before code? Tried (1) using pymgrid to generate microgrids"""
+    
+    """" Part of code to be deleted
+    def MultiAgentEnv(
+    
+    def __init__(self,
+    action_space_string = "continuous",
+    response_type_string = "l",
+    number_of_participants = 10,
+    one_day = 0,
+    energy_in_state = False,
+    day_of_week = False,
+    pricing_type="TOU",
+    reward_function = "market_solving",
+    manual_tou_magnitude=None,
+    complex_batt_pv_scenario=1,
+    exp_name = None,
+    two_price_state = False,
+    smirl_weight=None,
+    observation_callback=None,
+    info_callback=None,
+    reset_callback=None,
+    reward_callback=None,
+    done_callback=None,
+    shared_viewer=True): #change callback values above while training model. Otherwise use CustomCallbacks already in the CustomCallbacks file
+
+        #configure spaces
+        self.action_space = []
+        self.observation_space = []
+        
+        #callbacks for RL: set of functions to be applied at given stages of the training procedure. Understand internal states and statistics of the model during training
+        self.reset_callback = reset_callback
+        self.reward_callback = reward_callback
+        self.observation_callback = observation_callback
+        self.info_callback = info_callback
+        self.done_callback = done_callback
+        
+        # environment parameters
+        self.discrete_action_input = False
+        # if true, even the action is continuous, action will be performed discretely
+        self.force_discrete_action = world.discrete_action if hasattr(world, 'discrete_action') else False
+        # if true, every agent has the same reward
+        self.shared_reward = world.collaborative if hasattr(world, 'collaborative') else False
+        self.time = 0
+                
+"""
+
+
+####### original
 
 class MicrogridEnv(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -590,12 +663,18 @@ class MicrogridEnv(gym.Env):
 
         print("all inputs valid")
 
+
+
+
+
 class MicrogridEnvRLLib(MicrogridEnv):
     """ 
     Child Class of MicrogridEnv to support RLLib. 
     two_price_state and complex_batt_pv are specific params for the MicrogridEnv
-    and differs from SocialGame. 
+    and differs from SocialGame.
+    num_agents manually set to 3 so it can be accessed by make_multi_agent
     """
+    
     def __init__(self, env_config):
         super().__init__(
             action_space_string = env_config["action_space_string"], 
@@ -609,5 +688,14 @@ class MicrogridEnvRLLib(MicrogridEnv):
             smirl_weight=env_config["smirl_weight"], 
             complex_batt_pv_scenario=1, 
             two_price_state = False,
+            num_agents = 3
         )
         print("Initialized RLLib child class for MicrogridEnv.")
+
+
+MicrogridMultiAgent = make_multi_agent(lambda config: MicrogridEnvRLLib(config))
+
+
+#generates 10 microgrids by default that can be used to compare to the MicrogridEnv microgrid. Not sure how to recognize differences or simulate multiple versions of MicrogridEnv
+m_gen=mg.MicrogridGenerator()
+m_gen.generate_microgrid()
