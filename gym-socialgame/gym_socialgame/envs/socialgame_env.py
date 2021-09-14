@@ -4,6 +4,7 @@ from gym import spaces
 import numpy as np
 import random
 
+from ray.rllib.env.multi_agent_env import make_multi_agent, MultiAgentEnv
 from gym_socialgame.envs.utils import price_signal
 from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
@@ -116,6 +117,10 @@ class SocialGameEnv(gym.Env):
 
 
         print("\n Social Game Environment Initialized! Have Fun! \n")
+        
+    
+    SocialGameMultiAgent = make_multi_agent(lambda config: SocialGameEnvRLLib(config))
+
 
     def _find_one_day(self, one_day: int):
         """
@@ -715,3 +720,7 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
 
         info = {}
         return observation, reward, done, info
+        
+        
+        
+

@@ -15,6 +15,9 @@ class Reward():
 			sellprice_grid: list returned by grid signifying rate to sell energy throughout day (24 dim vector)
 			prices_transactive: list of prices set by RL agent (24 dim vector)
 		"""
+  
+  #Note: Connecting prosumer microgrids, we are replicating same microgrid as alternate experiment
+  ## Relevant logging is abs(log_cost_regularized(self) - log_cost_regularized(self))
 
 		self.net_demand = np.array(net_demand)
 		self.buyprice_grid = np.array(buyprice_grid)
