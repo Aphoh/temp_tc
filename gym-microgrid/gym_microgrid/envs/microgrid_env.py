@@ -10,6 +10,8 @@ from gym_microgrid.envs.agents import *
 from gym_microgrid.envs.reward import Reward
 from gym_socialgame.envs.buffers import GaussianBuffer
 
+from ray.rllib.env.multi_agent_env import MultiAgentEnv
+
 class MicrogridEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
@@ -28,7 +30,6 @@ class MicrogridEnv(gym.Env):
         two_price_state = False,
         smirl_weight=None
         ):
-
         """
         MicrogridEnv for an agent determining incentives in a social game.
 
@@ -221,7 +222,8 @@ class MicrogridEnv(gym.Env):
             raise AssertionError
 
         # Get energy from building_data.csv file,  each office building has readings in kWh. Interpolate to fill missing values
-        df = pd.read_csv('building_data.csv').interpolate().fillna(0)
+        df = pd.read_csv(
+            '~/gym-microgrid/gym_microgrid/envs/building_data.csv').interpolate().fillna(0)
         building_names = df.columns[5:] # Skip first few columns 
         for i in range(len(building_names)):
             name = building_names[i]
@@ -599,7 +601,7 @@ class MicrogridEnvRLLib(MicrogridEnv):
     and differs from SocialGame. 
     """
     def __init__(self, env_config):
-        super().__init__(
+        super(MicrogridEnvRLLib, self).__init__(
             action_space_string = env_config["action_space_string"], 
             response_type_string = env_config["response_type_string"],
             number_of_participants = env_config["number_of_participants"],
@@ -614,7 +616,7 @@ class MicrogridEnvRLLib(MicrogridEnv):
         )
         print("Initialized RLLib child class for MicrogridEnv.")
 
-class CounterfactualMicrogridEnvRLLib(MicrogridEnvRLLib):
+class CounterfactualMicrogridEnvRLLib(MicrogridEnvRLLib, MultiAgentEnv):
     """A modification of Microgrid env to include a counterfactual grid 
 
     This script creates a regular grid and a shadow grid, in which the agent
@@ -622,13 +624,15 @@ class CounterfactualMicrogridEnvRLLib(MicrogridEnvRLLib):
     more about the space of actions. 
     """
     def __init__(self, env_config):
-        super().__init__(env_config)
+        super(CounterfactualMicrogridEnvRLLib, self).__init__(env_config)
         self.real_grid = "real"
         self.shadow_grid = "shadow"
         self.prev_energy = {
             "real":np.zeros(self.day_length),
             "shadow":np.zeros(self.day_length)
         }
+        self.last_energy_cost = 0
+        self.last_energy_reward = 1
 
     def _get_reward_twoprices(
             self, 
@@ -685,6 +689,11 @@ class CounterfactualMicrogridEnvRLLib(MicrogridEnvRLLib):
         elif self.reward_function =="profit_maximizing":
             total_reward_real = money_from_prosumers_real - money_to_utility_real
             total_reward_shadow = - abs(money_from_prosumers_real - money_to_utility_shadow)
+        
+        self.last_energy_reward = self.last_energy_cost = {
+            "real": total_reward_real,
+            "shadow": total_reward_shadow
+        }
 
         return {"real":total_reward_real,
             "shadow":-total_reward_shadow}
@@ -750,7 +759,7 @@ class CounterfactualMicrogridEnvRLLib(MicrogridEnvRLLib):
             "real":self.curr_iter > 0,
             "shadow":self.curr_iter > 0
         }
-        
+
         if not self.two_price_state:
             print("one price state not supported in the MACRL")
             raise ValueError

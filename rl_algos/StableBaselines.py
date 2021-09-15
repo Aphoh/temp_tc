@@ -8,6 +8,7 @@ import wandb
 import os
 import datetime as dt
 import random
+import pdb
 
 from stable_baselines3 import SAC, PPO
 from stable_baselines3.sac.policies import MlpPolicy as SACMlpPolicy
@@ -36,6 +37,9 @@ from ray.rllib.contrib.bandits.agents.lin_ucb import LinUCBTrainer
 import pickle
 from ray.rllib.utils.framework import try_import_tf, get_variable
 import IPython
+
+#from ray.rllib.policy.policy import PolicySpec
+
 tf1, tf, tfv = try_import_tf()
 def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
     """
@@ -94,12 +98,11 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 num_samples = 5
             )
 
-            IPython.embed()
-
     elif library=="rllib":
 
         print("Initializing Ray")
-        ray.init(local_mode=True)
+        ray.init()#local_mode=True)
+        print("Ray is initialized")
 
         if args.algo=="ppo":
             train_batch_size = 256
@@ -124,18 +127,39 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 print("initializing the counterfactual environment")
                 config["env"] = CounterfactualMicrogridEnvRLLib
                 obs_dim = 72 * np.sum([args.energy_in_state, args.price_in_state])
-                obs_space = spaces.Box(low=-np.inf, high=np.inf, shape=(72,), dtype=np.float32)
+                obs_space = spaces.Box(
+                    low=-np.inf, high=np.inf, 
+                    shape=(72,), dtype=np.float32)
                 action_space = spaces.Box(
                     low = -1, high = 1, 
                     shape = (2 * 24, ), 
                     dtype = np.float32
                     )
                 config["env_config"]["num_agents"] = 2
+                policy_config = {}
+
+                # pdb.set_trace()
+
+                # agents_id = config["env"].agents
+                # print("agents_id -------------------------------")
+                # print(agents_id)
+
+                def policy_mapping_fn(agent_id, **kwargs):
+                    print("agent_id---------------------")
+                    print(agent_id)
+                    # if agent_id % 2:
+                    #     pol_id = "shadow"
+                    # else: 
+                    #     pol_id = "real"
+                    pol_id = random.choice(("real", "shadow"))
+                    return pol_id
+
                 config["multiagent"] = {
                     "policies": {
-                        "real": (None, obs_space, action_space),
-                        "shadow": (None, obs_space, action_space)
-                    }
+                        "real":  (None, obs_space, action_space, policy_config),
+                        "shadow": (None, obs_space, action_space, policy_config)
+                    },
+                    "policy_mapping_fn": policy_mapping_fn
                 }
                 print("finishing configuring the counterfactual environment")
             elif args.gym_env == "planning":
@@ -169,7 +193,6 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 updated_agent = ray_ppo.PPOTrainer(
                     config=config, 
                     env=CounterfactualMicrogridEnvRLLib, 
-                    verbose=2,
                     logger_creator=logger_creator)
             elif args.gym_env == "planning":
                 updated_agent = ray_ppo.PPOTrainer(
