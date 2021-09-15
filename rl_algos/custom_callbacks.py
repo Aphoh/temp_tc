@@ -7,6 +7,7 @@ custom metric.
 from typing import Dict
 import numpy as np
 import pandas as pd
+import pdb
 
 import ray
 from ray.rllib.agents.callbacks import DefaultCallbacks
@@ -26,7 +27,7 @@ class CustomCallbacks(DefaultCallbacks):
             self.cols.append("observation_" + str(i))
         self.obs_dim = obs_dim
         self.log_vals = {k: [] for k in self.cols}
-        self.log_path=log_path
+        print("initialized Custom Callbacks")
 
     def save(self):
         log_df=pd.DataFrame(data=self.log_vals)

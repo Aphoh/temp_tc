@@ -98,6 +98,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
     elif library=="rllib":
 
+        print("Initializing Ray")
         ray.init(local_mode=True)
 
         if args.algo=="ppo":
@@ -120,12 +121,13 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 config["env"] = MicrogridEnvRLLib
                 obs_dim = 72 * np.sum([args.energy_in_state, args.price_in_state])
             elif args.gym_env == "counterfactual":
+                print("initializing the counterfactual environment")
                 config["env"] = CounterfactualMicrogridEnvRLLib
                 obs_dim = 72 * np.sum([args.energy_in_state, args.price_in_state])
                 obs_space = spaces.Box(low=-np.inf, high=np.inf, shape=(72,), dtype=np.float32)
                 action_space = spaces.Box(
                     low = -1, high = 1, 
-                    shape = (2 * self.day_length, ), 
+                    shape = (2 * 24, ), 
                     dtype = np.float32
                     )
                 config["env_config"]["num_agents"] = 2
@@ -135,10 +137,12 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                         "shadow": (None, obs_space, action_space)
                     }
                 }
+                print("finishing configuring the counterfactual environment")
             elif args.gym_env == "planning":
                 config["env"] = SocialGameEnvRLLibPlanning
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
-                
+            
+            print("Finished config...")
 
             out_path = os.path.join(args.log_path, "bulk_data.h5")
             callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim)
@@ -146,20 +150,33 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             logger_creator = utils.custom_logger_creator(args.log_path)
 
             callbacks.save()
+            print("Saved first callback")
+
             if args.wandb:
                 wandb.save(out_path)
-           
 
             if args.gym_env == "socialgame":
-                updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
+                updated_agent = ray_ppo.PPOTrainer(
+                    config=config, 
+                    env=SocialGameEnvRLLib, 
+                    logger_creator=logger_creator)
             elif args.gym_env == "microgrid":
-                updated_agent = ray_ppo.PPOTrainer(config=config, env=MicrogridEnvRLLib, logger_creator=logger_creator)
+                updated_agent = ray_ppo.PPOTrainer(
+                    config=config, 
+                    env=MicrogridEnvRLLib, 
+                    logger_creator=logger_creator)
             elif args.gym_env == "counterfactual":
-                updated_agent = ray_ppo.PPOTrainer(config=config, env=CounterfactualMicrogridEnvRLLib, logger_creator=logger_creator)
+                updated_agent = ray_ppo.PPOTrainer(
+                    config=config, 
+                    env=CounterfactualMicrogridEnvRLLib, 
+                    verbose=2,
+                    logger_creator=logger_creator)
             elif args.gym_env == "planning":
-                updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLibPlanning, logger_creator=logger_creator)
+                updated_agent = ray_ppo.PPOTrainer(
+                    config=config, 
+                    env=SocialGameEnvRLLibPlanning, 
+                    logger_creator=logger_creator)
             
-
             if args.checkpoint:
                 old_weights = updated_agent.get_policy().get_weights()
                 with open(args.checkpoint, "rb") as ckpt_file:
@@ -184,14 +201,19 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
             to_log = ["episode_reward_mean"]
             timesteps_total = 0
+            
+            print("Beginning training")
+
             while timesteps_total < num_steps:
                 result = updated_agent.train()
                 timesteps_total = result["timesteps_total"]
                 log = {name: result[name] for name in to_log}
                 if args.wandb:
+                    print(log)
                     wandb.log(log)
                 else:
                     print(log)
+            
 
             callbacks.save()
 
@@ -642,7 +664,9 @@ def parse_args():
     )
     args = parser.parse_args()
 
-    args.log_path = os.path.join(os.path.abspath(args.base_log_dir), "{}_{}".format(args.exp_name, str(dt.datetime.today())))
+    args.log_path = os.path.join(
+        os.path.abspath(args.base_log_dir), 
+        "{}_{}".format(args.exp_name, str(dt.datetime.today())))
 
     os.makedirs(args.log_path, exist_ok=True)
 
