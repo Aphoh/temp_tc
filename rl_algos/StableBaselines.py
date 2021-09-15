@@ -1,6 +1,7 @@
 import argparse
 import numpy as np
 import gym
+from gym import spaces
 import utils
 from custom_callbacks import CustomCallbacks
 import wandb
@@ -20,7 +21,7 @@ import gym_socialgame.envs.utils as env_utils
 from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv, SocialGameEnvRLLibPlanning)
 
 import gym_microgrid.envs.utils as env_utils
-from gym_microgrid.envs.microgrid_env import MicrogridEnvRLLib
+from gym_microgrid.envs.microgrid_env import (MicrogridEnvRLLib, CounterfactualMicrogridEnvRLLib)
 
 import ray
 import ray.rllib.agents.ppo as ray_ppo
@@ -107,15 +108,33 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["sgd_minibatch_size"] = 16
             config["lr"] = 0.001
             config["clip_param"] = 0.3
-            config["num_gpus"] =  1
+            config["num_gpus"] =  1 # this may throw an error
             config["num_workers"] = 1
+            config["env_config"] = vars(args)
 
+            ## differentiate environment in the config
             if args.gym_env == "socialgame":
                 config["env"] = SocialGameEnvRLLib
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
             elif args.gym_env == "microgrid":
                 config["env"] = MicrogridEnvRLLib
                 obs_dim = 72 * np.sum([args.energy_in_state, args.price_in_state])
+            elif args.gym_env == "counterfactual":
+                config["env"] = CounterfactualMicrogridEnvRLLib
+                obs_dim = 72 * np.sum([args.energy_in_state, args.price_in_state])
+                obs_space = spaces.Box(low=-np.inf, high=np.inf, shape=(72,), dtype=np.float32)
+                action_space = spaces.Box(
+                    low = -1, high = 1, 
+                    shape = (2 * self.day_length, ), 
+                    dtype = np.float32
+                    )
+                config["env_config"]["num_agents"] = 2
+                config["multiagent"] = {
+                    "policies": {
+                        "real": (None, obs_space, action_space),
+                        "shadow": (None, obs_space, action_space)
+                    }
+                }
             elif args.gym_env == "planning":
                 config["env"] = SocialGameEnvRLLibPlanning
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
@@ -124,20 +143,22 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             out_path = os.path.join(args.log_path, "bulk_data.h5")
             callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim)
             config["callbacks"] = lambda: callbacks
-            config["env_config"] = vars(args)
             logger_creator = utils.custom_logger_creator(args.log_path)
 
             callbacks.save()
             if args.wandb:
                 wandb.save(out_path)
-
+           
 
             if args.gym_env == "socialgame":
                 updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
             elif args.gym_env == "microgrid":
                 updated_agent = ray_ppo.PPOTrainer(config=config, env=MicrogridEnvRLLib, logger_creator=logger_creator)
+            elif args.gym_env == "counterfactual":
+                updated_agent = ray_ppo.PPOTrainer(config=config, env=CounterfactualMicrogridEnvRLLib, logger_creator=logger_creator)
             elif args.gym_env == "planning":
                 updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLibPlanning, logger_creator=logger_creator)
+            
 
             if args.checkpoint:
                 old_weights = updated_agent.get_policy().get_weights()
@@ -344,7 +365,7 @@ def get_environment(args):
         )
     elif args.gym_env == "microgrid":
         gym_env = gym.make(
-            "gym_microgrid:microgrid{}".format(env_id),
+            "gym_microgrid:microgrid{}-v0".format(env_id),
             action_space_string=action_space_string,
             response_type_string=args.response_type_string,
             one_day=args.one_day,
@@ -355,6 +376,10 @@ def get_environment(args):
             manual_tou_magnitude=args.manual_tou_magnitude,
             smirl_weight=args.smirl_weight # NOTE: Complex Batt PV and two price state default values used
         )
+    elif args.gym_env == "counterfactual":
+        gym_env = gym.make(
+            "gym_microgrid:microgrid-counterfactual-v0",
+            )
 
     elif args.gym_env == "planning":
         gym_env = gym.make(
@@ -429,7 +454,7 @@ def parse_args():
         "--gym_env", 
         help="Which Gym Environment you wihs to use",
         type=str,
-        choices=["socialgame", "microgrid", "planning"],
+        choices=["socialgame", "microgrid", "planning", "counterfactual"],
         default="socialgame"
     )
     parser.add_argument(
@@ -582,7 +607,7 @@ def parse_args():
         "--library",
         help = "What RL Library backend is in use",
         type = str,
-        default = "sb3",
+        default = "rllib",
         choices = ["sb3", "rllib", "tune"]
     )
     parser.add_argument(

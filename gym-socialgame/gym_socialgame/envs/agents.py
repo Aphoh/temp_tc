@@ -278,6 +278,14 @@ class RandomizedFunctionPerson(DeterministicFunctionPerson):
 
 # utkarsha's person 
 
+# 1. % load curtailed 
+# 2. % load shifted 
+# 3. proportion curtailed/shifted
+# 4. measure of uniformity in non-peak hours? 
+	# a. lambda (max_{non peak} - min{non-peak}) ==> r = log(cost) - lambda(too much reduce) + r_{SMiRL}  + lambda(not distributing well)
+	# b. log these individually: log(cost), r(too much reduce), r_{SMiRL}, r(not distributing well)
+# 5. metric for x amount of dollars saved --> limited_regret() [either from 0 to T -- or some window t_1 to t_2]
+
 class CurtailAndShiftPerson(Person):
 	def __init__(self, baseline_energy_df, points_multiplier = 1, shiftable_load_frac = .7, 
 			curtailable_load_frac = .4, shiftByHours = 3, maxCurtailHours=5, response = None, **kwargs):

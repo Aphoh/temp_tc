@@ -475,7 +475,9 @@ class MicrogridEnv(gym.Env):
         self.curr_iter += 1
         self.total_iter += 1
 
-        done = self.curr_iter > 0
+        done = {
+            self.curr_iter > 0
+        }
 
         if not self.two_price_state:
             price = self._price_from_action(action)
@@ -611,3 +613,200 @@ class MicrogridEnvRLLib(MicrogridEnv):
             two_price_state = False,
         )
         print("Initialized RLLib child class for MicrogridEnv.")
+
+class CounterfactualMicrogridEnvRLLib(MicrogridEnvRLLib):
+    """A modification of Microgrid env to include a counterfactual grid 
+
+    This script creates a regular grid and a shadow grid, in which the agent
+    will try to do as poorly as possible. This may help the agent understand
+    more about the space of actions. 
+    """
+    def __init__(self, env_config):
+        super().__init__(env_config)
+        self.real_grid = "real"
+        self.shadow_grid = "shadow"
+        self.prev_energy = {
+            "real":np.zeros(self.day_length),
+            "shadow":np.zeros(self.day_length)
+        }
+
+    def _get_reward_twoprices(
+            self, 
+            buyprice_grid, 
+            sellprice_grid, 
+            transactive_buyprice, 
+            transactive_sellprice, 
+            energy_consumptions
+        ):
+        """
+        Purpose: Compute positive reward for the real agent and negative reward for the shadow agent
+
+        Args:
+            buyprice_grid: price at which energy is bought from the utility (24 dim vector)
+            sellprice_grid: price at which energy is sold to the utility by the RL agent (24 dim vector)
+            transactive_buyprice: price set by RL agents for local market in day ahead manner (dict of 24 dim vectors)
+            transactive_sellprice: price set by RL agents for local market in day ahead manner (dict of 24 dim vectors)
+            energy_consumptions: Dictionary of dicts containing energy usage by each prosumer, as well as the total
+
+        Returns:
+            Reward for RL agent (- |net money flow|): in order to get close to market equilibrium
+        """
+
+        total_consumption_real = energy_consumptions["real"]['Total']
+        total_consumption_shadow = energy_consumptions["shadow"]["Total"]
+        money_to_utility_real = (
+            np.dot(np.maximum(0, total_consumption_real), buyprice_grid) + 
+            np.dot(np.minimum(0, total_consumption_real), sellprice_grid)
+        )
+        money_to_utility_shadow = (
+            np.dot(np.maximum(0, total_consumption_shadow), buyprice_grid) + 
+            np.dot(np.minimum(0, total_consumption_shadow), sellprice_grid)
+        )
+
+        money_from_prosumers_real = 0
+        money_from_prosumers_shadow = 0
+        for prosumerName in energy_consumptions["real"]:
+            money_from_prosumers_real += (
+                np.dot(np.maximum(0, energy_consumptions["real"][prosumerName]), transactive_buyprice) + 
+                np.dot(np.minimum(0, energy_consumptions["real"][prosumerName]), transactive_sellprice)
+            )
+
+        for prosumerName in energy_consumptions["shadow"]:
+            money_from_prosumers_shadow += (
+                np.dot(np.maximum(0, energy_consumptions["shadow"][prosumerName]), transactive_buyprice) + 
+                np.dot(np.minimum(0, energy_consumptions["shadow"][prosumerName]), transactive_sellprice)
+            )
+
+        total_reward_real = None
+        total_reward_shadow = None
+        if self.reward_function == "market_solving":
+            total_reward_real = - abs(money_from_prosumers_real - money_to_utility_real)
+            total_reward_shadow = - abs(money_from_prosumers_shadow - money_to_utility_shadow)
+        elif self.reward_function =="profit_maximizing":
+            total_reward_real = money_from_prosumers_real - money_to_utility_real
+            total_reward_shadow = - abs(money_from_prosumers_real - money_to_utility_shadow)
+
+        return {"real":total_reward_real,
+            "shadow":-total_reward_shadow}
+
+    def _get_observation(self):
+    
+        prev_energy = self.prev_energy
+        generation_tomorrow = self.generation[(self.day + 1)%365] 
+        buyprice_grid_tomorrow = self.buyprices_grid[(self.day + 1)%365] 
+
+        noise = np.random.normal(loc = 0, scale = 50, size = 24) ## TODO: get rid of this if not doing well
+        generation_tomorrow_nonzero = (generation_tomorrow > abs(noise)) # when is generation non zero?
+        generation_tomorrow += generation_tomorrow_nonzero* noise # Add in Gaussian noise when gen in non zero
+
+        return {"real":np.concatenate(
+                (prev_energy["real"], generation_tomorrow, buyprice_grid_tomorrow)
+            ),
+            "shadow":np.concatenate(
+                (prev_energy["shadow"], generation_tomorrow, buyprice_grid_tomorrow)
+            )
+        }
+     
+
+    def step(self, action_dict):
+        """
+        Purpose: Takes a step in the environment for each agent 
+
+        Args:
+            Action: 24 dim vector in [-1, 1]
+
+        Returns:
+            Observation: State for the next day
+            Reward: Reward for said action
+            Done: Whether or not the day is done (should always be True b/c of 1-step trajectory)
+            Info: Other info (primarily for gym env based library compatibility)
+
+        Exceptions:
+            raises AssertionError if action is not in the action space
+        """
+
+        self.action_dict = action_dict
+
+        if not self.action_space.contains(action_dict["real"]):
+            action_real = np.asarray(action_dict["real"])
+            action_shadow = np.asarray(action_dict["shadow"])
+            if self.action_space_string == 'continuous':
+                action_real = np.clip(action_real, -1, 1)
+                action_shadow = np.clip(action_shadow, -1, 1)
+                # TODO: ask Lucas about this
+            else:
+                print("wrong action_space_string")
+                raise AssertionError
+        else:
+            action_real = np.asarray(action_dict["real"])
+            action_shadow = np.asarray(action_dict["shadow"])
+
+        # prev_price = self.prices[(self.day)]
+        self.day = (self.day + 1) % 365 
+        self.curr_iter += 1
+        self.total_iter += 1
+
+        done = {
+            "real":self.curr_iter > 0,
+            "shadow":self.curr_iter > 0
+        }
+        
+        if not self.two_price_state:
+            print("one price state not supported in the MACRL")
+            raise ValueError
+            # price = self._price_from_action(action)
+            # self.price = price
+
+            # energy_consumptions = self._simulate_humans(day = self.day, price = price)
+            # self.prev_energy = energy_consumptions["Total"]
+
+            # observation = self._get_observation()
+        
+            # buyprice_grid = self.buyprices_grid[self.day]
+            # sellprice_grid = self.sellprices_grid[self.day]
+            # reward = self._get_reward(buyprice_grid, sellprice_grid, price, energy_consumptions)
+
+            # self.iteration += 1
+
+        else: 
+            buyprice, sellprice = {}, {}
+            buyprice["real"], sellprice["real"] = self._price_from_action(action_real)
+            buyprice["shadow"], sellprice["shadow"] = self._price_from_action(action_shadow)
+            # self.price = price
+
+            energy_consumptions = {}
+            energy_consumptions["real"] = self._simulate_prosumers_twoprices(
+                day = self.day, 
+                buyprice = buyprice["real"], 
+                sellprice = sellprice["real"])
+            
+            energy_consumptions["shadow"] = self._simulate_prosumers_twoprices(
+                day = self.day, 
+                buyprice = buyprice["shadow"], 
+                sellprice = sellprice["shadow"])
+
+            self.prev_energy = {
+                "real":energy_consumptions["real"]["Total"],
+                "shadow":energy_consumptions["shadow"]["Total"]
+            }
+
+            observation = self._get_observation() # this already turns back a dict
+
+        
+            buyprice_grid = self.buyprices_grid[self.day]
+            sellprice_grid = self.sellprices_grid[self.day]
+            reward = self._get_reward_twoprices(
+                buyprice_grid, 
+                sellprice_grid, 
+                buyprice, 
+                sellprice, 
+                energy_consumptions
+            )
+            
+            self.iteration += 1
+
+        if self.use_smirl:
+            self.buffer.add(observation)
+
+        info = {"real":{}, "shadow":{}}
+        return observation, reward, done, info
