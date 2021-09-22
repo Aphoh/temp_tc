@@ -10,6 +10,8 @@ from gym_microgrid.envs.agents import *
 from gym_microgrid.envs.reward import Reward
 from gym_socialgame.envs.buffers import GaussianBuffer
 
+import IPython
+
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
 class MicrogridEnv(gym.Env):
@@ -625,14 +627,19 @@ class CounterfactualMicrogridEnvRLLib(MicrogridEnvRLLib, MultiAgentEnv):
     """
     def __init__(self, env_config):
         super(CounterfactualMicrogridEnvRLLib, self).__init__(env_config)
-        self.real_grid = "real"
-        self.shadow_grid = "shadow"
+        self.two_price_state = True
         self.prev_energy = {
             "real":np.zeros(self.day_length),
             "shadow":np.zeros(self.day_length)
         }
-        self.last_energy_cost = 0
-        self.last_energy_reward = 1
+        self.last_energy_cost = {
+            "real": 1,
+            "shadow": 1
+        }
+        self.last_energy_reward = {
+            "real": 1,
+            "shadow": 1,
+        }
 
     def _get_reward_twoprices(
             self, 
@@ -658,6 +665,7 @@ class CounterfactualMicrogridEnvRLLib(MicrogridEnvRLLib, MultiAgentEnv):
 
         total_consumption_real = energy_consumptions["real"]['Total']
         total_consumption_shadow = energy_consumptions["shadow"]["Total"]
+
         money_to_utility_real = (
             np.dot(np.maximum(0, total_consumption_real), buyprice_grid) + 
             np.dot(np.minimum(0, total_consumption_real), sellprice_grid)
@@ -669,37 +677,53 @@ class CounterfactualMicrogridEnvRLLib(MicrogridEnvRLLib, MultiAgentEnv):
 
         money_from_prosumers_real = 0
         money_from_prosumers_shadow = 0
+
+
         for prosumerName in energy_consumptions["real"]:
             money_from_prosumers_real += (
-                np.dot(np.maximum(0, energy_consumptions["real"][prosumerName]), transactive_buyprice) + 
-                np.dot(np.minimum(0, energy_consumptions["real"][prosumerName]), transactive_sellprice)
+                np.dot(
+                    np.maximum(0, energy_consumptions["real"][prosumerName]), 
+                    transactive_buyprice["real"]) + 
+                np.dot(
+                    np.minimum(0, energy_consumptions["real"][prosumerName]), 
+                    transactive_sellprice["real"])
             )
 
         for prosumerName in energy_consumptions["shadow"]:
             money_from_prosumers_shadow += (
-                np.dot(np.maximum(0, energy_consumptions["shadow"][prosumerName]), transactive_buyprice) + 
-                np.dot(np.minimum(0, energy_consumptions["shadow"][prosumerName]), transactive_sellprice)
+                np.dot(
+                    np.maximum(0, energy_consumptions["shadow"][prosumerName]), 
+                    transactive_buyprice["shadow"]) + 
+                np.dot(
+                    np.minimum(0, energy_consumptions["shadow"][prosumerName]), 
+                    transactive_sellprice["shadow"])
             )
 
-        total_reward_real = None
-        total_reward_shadow = None
+        # IPython.embed()
+
         if self.reward_function == "market_solving":
             total_reward_real = - abs(money_from_prosumers_real - money_to_utility_real)
             total_reward_shadow = - abs(money_from_prosumers_shadow - money_to_utility_shadow)
-        elif self.reward_function =="profit_maximizing":
+
+        elif self.reward_function == "profit_maximizing":
             total_reward_real = money_from_prosumers_real - money_to_utility_real
-            total_reward_shadow = - abs(money_from_prosumers_real - money_to_utility_shadow)
+            total_reward_shadow = money_from_prosumers_shadow - money_to_utility_shadow
         
+        else:
+            raise ValueError("Your reward type is not supported. Choose profit maximizing")
+
         self.last_energy_reward = self.last_energy_cost = {
             "real": total_reward_real,
             "shadow": total_reward_shadow
         }
+
 
         return {"real":total_reward_real,
             "shadow":-total_reward_shadow}
 
     def _get_observation(self):
     
+        print("getting obs")
         prev_energy = self.prev_energy
         generation_tomorrow = self.generation[(self.day + 1)%365] 
         buyprice_grid_tomorrow = self.buyprices_grid[(self.day + 1)%365] 
@@ -708,10 +732,11 @@ class CounterfactualMicrogridEnvRLLib(MicrogridEnvRLLib, MultiAgentEnv):
         generation_tomorrow_nonzero = (generation_tomorrow > abs(noise)) # when is generation non zero?
         generation_tomorrow += generation_tomorrow_nonzero* noise # Add in Gaussian noise when gen in non zero
 
-        return {"real":np.concatenate(
+        return {
+            "real": np.concatenate(
                 (prev_energy["real"], generation_tomorrow, buyprice_grid_tomorrow)
             ),
-            "shadow":np.concatenate(
+            "shadow": np.concatenate(
                 (prev_energy["shadow"], generation_tomorrow, buyprice_grid_tomorrow)
             )
         }
@@ -756,13 +781,15 @@ class CounterfactualMicrogridEnvRLLib(MicrogridEnvRLLib, MultiAgentEnv):
         self.total_iter += 1
 
         done = {
-            "real":self.curr_iter > 0,
-            "shadow":self.curr_iter > 0
+            "real": self.curr_iter > 0,
+            "shadow": self.curr_iter > 0,
+            "__all__": self.curr_iter > 0
         }
 
+        # IPython.embed()
+
         if not self.two_price_state:
-            print("one price state not supported in the MACRL")
-            raise ValueError
+            raise ValueError("one price state not supported in the MACRL")
             # price = self._price_from_action(action)
             # self.price = price
 

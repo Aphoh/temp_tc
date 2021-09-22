@@ -3,7 +3,7 @@ import numpy as np
 import gym
 from gym import spaces
 import utils
-from custom_callbacks import CustomCallbacks
+from custom_callbacks import CustomCallbacks, CustomCallbacksMultiagent
 import wandb
 import os
 import datetime as dt
@@ -19,10 +19,14 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.env_checker import check_env
 
 import gym_socialgame.envs.utils as env_utils
-from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv, SocialGameEnvRLLibPlanning)
+from gym_socialgame.envs.socialgame_env import (
+    SocialGameEnvRLLib, 
+    SocialGameMetaEnv, 
+    SocialGameEnvRLLibPlanning)
 
 import gym_microgrid.envs.utils as env_utils
-from gym_microgrid.envs.microgrid_env import (MicrogridEnvRLLib, CounterfactualMicrogridEnvRLLib)
+from gym_microgrid.envs.microgrid_env import (
+    MicrogridEnvRLLib, CounterfactualMicrogridEnvRLLib)
 
 import ray
 import ray.rllib.agents.ppo as ray_ppo
@@ -147,11 +151,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 def policy_mapping_fn(agent_id, **kwargs):
                     print("agent_id---------------------")
                     print(agent_id)
-                    # if agent_id % 2:
-                    #     pol_id = "shadow"
-                    # else: 
-                    #     pol_id = "real"
-                    pol_id = random.choice(("real", "shadow"))
+                    pol_id = agent_id
                     return pol_id
 
                 config["multiagent"] = {
@@ -162,14 +162,27 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     "policy_mapping_fn": policy_mapping_fn
                 }
                 print("finishing configuring the counterfactual environment")
+                
             elif args.gym_env == "planning":
                 config["env"] = SocialGameEnvRLLibPlanning
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
             
             print("Finished config...")
 
-            out_path = os.path.join(args.log_path, "bulk_data.h5")
-            callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim)
+            out_path = os.path.join(args.log_path, "bulk_data")
+
+            if args.gym_env == "counterfactual":
+                callbacks = CustomCallbacksMultiagent(
+                    log_path=out_path, 
+                    save_interval=args.bulk_log_interval, 
+                    obs_dim=obs_dim, 
+                    multiagent=True)
+            else:
+                callbacks = CustomCallbacks(
+                    log_path=out_path, 
+                    save_interval=args.bulk_log_interval, 
+                    obs_dim=obs_dim)
+            
             config["callbacks"] = lambda: callbacks
             logger_creator = utils.custom_logger_creator(args.log_path)
 
@@ -236,7 +249,6 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     wandb.log(log)
                 else:
                     print(log)
-            
 
             callbacks.save()
 
@@ -636,9 +648,9 @@ def parse_args():
         choices = [ 1, 2, 3, 4, 5, 6 ]),
     parser.add_argument(
         "--two_price_state",
-        help="Whether to include buy and sell price in state (default = F)",
+        help="Whether to include buy and sell price in state (default = T)",
         type=str,
-        default="F",
+        default="T",
         choices=["T", "F"],
     )
     parser.add_argument(
