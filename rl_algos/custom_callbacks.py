@@ -23,7 +23,7 @@ class CustomCallbacks(DefaultCallbacks):
         super().__init__()
         self.log_path=log_path
         self.save_interval=save_interval
-        self.cols = ["step", "energy_reward", "smirl_reward", "energy_cost"]
+        self.cols = ["step", "energy_reward", "smirl_reward", "energy_cost", "predicted_costs"]
         for i in range(obs_dim):
             self.cols.append("observation_" + str(i))
         self.obs_dim = obs_dim
@@ -60,6 +60,7 @@ class CustomCallbacks(DefaultCallbacks):
         episode.hist_data["real_step"] = []
 
         episode.user_data["predicted_costs"] = []
+        episode.hist_data["predicted_costs"] = []
 
     def on_episode_step(self, *, worker: RolloutWorker, base_env: BaseEnv,
                         episode: MultiAgentEpisode, env_index: int, **kwargs):
@@ -68,9 +69,9 @@ class CustomCallbacks(DefaultCallbacks):
         step_i = socialgame_env.total_iter
         if not hasattr(socialgame_env, "planning_steps"):
             self.log_vals["step"].append(step_i)        
-
         # TODO: Implement logging for planning_env 
         if hasattr(socialgame_env, "is_step_in_real"):
+            episode.custom_metrics["is_step_in_real"] = socialgame_env.is_step_in_real
             if socialgame_env.is_step_in_real:
                 print("Logging real step: ", self.steps_since_save)
                 self.log_vals["step"].append(socialgame_env.num_real_steps)
@@ -99,6 +100,15 @@ class CustomCallbacks(DefaultCallbacks):
                     self.log_vals["energy_cost"].append(energy_cost)
                 else:
                     self.log_vals["energy_cost"].append(np.nan)
+
+                if socialgame_env.last_predicted_cost:
+                    predicted_costs = socialgame_env.last_predicted_cost
+                    episode.hist_data["predicted_costs"].append(predicted_costs)
+                    episode.user_data["predicted_costs"].append(predicted_costs)
+                    self.log_vals["predicted_costs"].append(predicted_costs)
+                else:
+                    self.log_vals["predicted_costs"].append(np.nan)
+
                 if isinstance(socialgame_env, NormalizeActionWrapper):
                     obs = socialgame_env.env._get_observation()
                 else:
@@ -113,6 +123,7 @@ class CustomCallbacks(DefaultCallbacks):
                 self.steps_since_save += 1
                 
         else:
+            
             if socialgame_env.use_smirl and socialgame_env.last_smirl_reward:
                 smirl_rew = socialgame_env.last_smirl_reward
                 episode.user_data["smirl_reward"].append(smirl_rew)
@@ -137,6 +148,8 @@ class CustomCallbacks(DefaultCallbacks):
             else:
                 self.log_vals["energy_cost"].append(np.nan)
 
+            
+
             if isinstance(socialgame_env, NormalizeActionWrapper):
                 obs = socialgame_env.env._get_observation()
             else:
@@ -158,6 +171,7 @@ class CustomCallbacks(DefaultCallbacks):
         episode.custom_metrics["real_step"] = np.mean(episode.user_data["real_step"])
         episode.custom_metrics["energy_reward"] = np.mean(episode.user_data["energy_reward"])
         episode.custom_metrics["energy_cost"] = np.mean(episode.user_data["energy_cost"])
+        episode.custom_metrics["predicted_costs"] = np.mean(episode.user_data["predicted_costs"])
         if socialgame_env.use_smirl:
             episode.custom_metrics["smirl_reward"] = np.mean(episode.user_data["smirl_reward"])
 
@@ -177,10 +191,11 @@ class CustomCallbacks(DefaultCallbacks):
             agent_id: str, policy_id: str, policies: Dict[str, Policy],
             postprocessed_batch: SampleBatch,
             original_batches: Dict[str, SampleBatch], **kwargs):
+
         if "num_batches" not in episode.custom_metrics:
             episode.custom_metrics["num_batches"] = 0
-
         episode.custom_metrics["num_batches"] += 1
+
         if len(postprocessed_batch) > 1:
             print("Error: trajectories larger than 1")
             import pdb; pdb.set_trace()
@@ -188,14 +203,20 @@ class CustomCallbacks(DefaultCallbacks):
             # Assumes length of trajectory is 1
             actions = postprocessed_batch["actions"]
             rewards = postprocessed_batch["rewards"]
-            predicted_consumption, _ = self.planning_model(actions) # TODO, SEE WHAT SAMPLEBATCH ACTUALLY IS
+            output = self.planning_model(actions.squeeze())
+            if isinstance(output, tuple):
+                predicted_consumption = output[0]
+            else:
+                predicted_consumption = output
+            #episode.hist_data["planning_consumptions"] = predicted_consumption
             tou = 0.103 * np.ones((10), dtype=np.float32)
             tou[5:8] = self.args.manual_tou_magnitude
             _, tou_rewards, _, _ = self.env.step(tou)
             tou_cost = 75#self.env.last_energy_cost
+
             predicted_costs = (np.dot(predicted_consumption, self.env.prices[self.env.day].squeeze()) / self.env.number_of_participants) * 500 * 0.001
-            episode.custom_metrics["predicted_costs"] = predicted_costs
-            if predicted_costs > tou_cost:
+            
+            if predicted_costs > tou_cost and self.args.tou_replacement:
             #if True:
                 print("Replacing...")
                 postprocessed_batch["rewards"] = tou_rewards.reshape(rewards.shape)
@@ -213,7 +234,5 @@ class CustomCallbacks(DefaultCallbacks):
                     episode.hist_data["energy_cost"][-1] = tou_cost
                     self.log_vals["energy_cost"][-1] = tou_cost
         if self.steps_since_save >= self.save_interval:
-                self.save()
-        
+            self.save()
         return
-

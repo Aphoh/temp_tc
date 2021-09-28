@@ -941,6 +941,7 @@ class SocialGameEnvRLLibGuardRail(SocialGameEnvRLLibPlanning):
     def __init__(self, env_config):
         print("Using Guardrails")
         self.predicted_costs = []
+        self.last_predicted_cost = 0
         super().__init__(env_config)
 
     def step(self, action):
@@ -981,6 +982,7 @@ class SocialGameEnvRLLibGuardRail(SocialGameEnvRLLibPlanning):
         points = self._points_from_action(action)
         predicted_energy_consumptions = self._simulate_humans_planning_model(points)
         predicted_energy_cost = np.dot(predicted_energy_consumptions["avg"], prev_price) * 0.001 * 500
+        self.last_predicted_cost = predicted_energy_cost
         self.predicted_costs.append(predicted_energy_cost)
         tou = 0.103 * np.ones((10))
         tou[5:8] = self.manual_tou_magnitude

@@ -11,14 +11,14 @@ name: Extreme Intervention Sweep
 program: rl_algos/StableBaselines.py
 parameters:
   oracle_noise:
-    values: [ 500, 1000]
+    values: [100, 110, 120, 130, 140, 150, 160, 170]
 command:
   - ${env}
   - python
   - ${program}
   - "-w"
   - "--library=rllib"
-  - "--num_steps=150"
+  - "--num_steps=500"
   - "--algo=sac" 
   - "--checkpoint_interval=50"
   - "--gym_env=planning_guardrails"

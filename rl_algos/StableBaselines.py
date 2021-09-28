@@ -147,14 +147,8 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
         elif args.algo == "sac" or args.algo == "warm_sac":
             print("In SAC training loop")
             callbacks = agent.config['callbacks']()
-            to_log = ["episode_reward_mean"]
             for i in range(num_steps):
                 result = agent.train()
-                log = {name: result[name] for name in to_log}
-                if args.wandb:
-                    wandb.log(log)
-                else:
-                    print(log)
                 if args.gym_env == "planning_dagger":
                     # Decay the ratio of planning steps to target steps
                     agent.workers.foreach_worker(
@@ -467,11 +461,12 @@ def get_agent(env, args, non_vec_env=None):
             config["input"] = {}
             
             out_path = os.path.join(args.log_path, "bulk_data.h5")
-            if args.tou_replacement:
-                dummy_env = env(config["env_config"])
+            dummy_env = env(config["env_config"])
+            if hasattr(dummy_env, "planning_model"):
+                
                 callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim, planning_model=dummy_env.planning_model, env=dummy_env, args=args)
             else:
-                callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim)
+                callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim, args=args)
             config["callbacks"] = lambda: callbacks
             logger_creator = utils.custom_logger_creator(args.log_path)
             callbacks.save()
@@ -491,6 +486,7 @@ def get_agent(env, args, non_vec_env=None):
                     sac_weights = pickle.load(ckpt_file)
                 #ppo_to_sac_weights(ppo_weights, SACTrainer, ppo_torch=True)
                 SACTrainer.get_policy().set_weights(sac_weights)
+            
             print("got SAC trainer")
             return SACTrainer
     else:
