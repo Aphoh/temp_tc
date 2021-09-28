@@ -142,12 +142,6 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 config["env_config"]["num_agents"] = 2
                 policy_config = {}
 
-                # pdb.set_trace()
-
-                # agents_id = config["env"].agents
-                # print("agents_id -------------------------------")
-                # print(agents_id)
-
                 def policy_mapping_fn(agent_id, **kwargs):
                     print("agent_id---------------------")
                     print(agent_id)
@@ -162,7 +156,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                     "policy_mapping_fn": policy_mapping_fn
                 }
                 print("finishing configuring the counterfactual environment")
-                
+
             elif args.gym_env == "planning":
                 config["env"] = SocialGameEnvRLLibPlanning
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
