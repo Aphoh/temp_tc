@@ -239,6 +239,11 @@ old/
 wandb/
 .netrc
 .python_history
+*.ckpt
 
 ray_results/
 .viminfo
+
+wandb_export*
+graph_csv*
+/planning_ckpts_diverse2
