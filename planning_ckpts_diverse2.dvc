@@ -1,0 +1,5 @@
+outs:
+- md5: bc23b1670c80d02388c97b139f66c1c0.dir
+  size: 87950960
+  nfiles: 12
+  path: planning_ckpts_diverse2

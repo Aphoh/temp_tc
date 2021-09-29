@@ -4,5 +4,4 @@
 /offline_data
 /maml_ckpts
 /ppo_ckpts
-/sac_ckpts
 *.ckpt
