@@ -17,7 +17,13 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.env_checker import check_env
 
 import gym_socialgame.envs.utils as env_utils
-from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv, SocialGameEnvRLLibPlanning, SocialGameEnvRLLibExtreme, SocialGameEnvRLLibGuardRail)
+from gym_socialgame.envs.socialgame_env import (
+    SocialGameEnvRLLib, 
+    SocialGameMetaEnv,
+    SocialGameEnvRLLibPlanning, 
+    SocialGameEnvRLLibExtreme, 
+    SocialGameEnvRLLibGuardRail,
+    SocialGameEnvRLLibIntrinsicMotivation)
 
 import gym_microgrid.envs.utils as env_utils
 from gym_microgrid.envs.microgrid_env import MicrogridEnvRLLib
@@ -66,7 +72,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
             config["framework"] = "torch"
             config["env"] = SocialGameEnvRLLib
             config["callbacks"] = CustomCallbacks
-            config["num_gpus"] = 1
+            config["num_gpus"] = args.num_gpus
             config["num_workers"] = 4
             config["env_config"] = vars(args)
 
@@ -223,9 +229,11 @@ def maml_eval_fn(model_weights, args):
         obs_dim = 72 * np.sum([args.energy_in_state, args.price_in_state])
     elif args.gym_env == "planning":
         obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
+    elif args.gym_env == "curiosity":
+        obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
         
     config["framework"] = "tf1"
-    config["num_gpus"] = 1
+    config["num_gpus"] = args.num_gpus
     config["num_envs_per_worker"] = 1
     config["num_workers"] = 1
     config["inner_adaptation_steps"] = 100
@@ -351,7 +359,7 @@ def get_agent(env, args, non_vec_env=None):
             config["sgd_minibatch_size"] = 16
             config["lr"] = 0.1
             config["clip_param"] = 0.3
-            config["num_gpus"] =  1
+            config["num_gpus"] =  args.num_gpus
             config["num_workers"] = 1
 
             if args.gym_env == "socialgame":
@@ -363,7 +371,9 @@ def get_agent(env, args, non_vec_env=None):
             elif args.gym_env == "planning":
                 config["env"] = SocialGameEnvRLLibPlanning
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
-                
+            elif args.gym_env == "curiosity":
+                config["env"] = SocialGameEnvRLLibIntrinsicMotivation
+                obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
 
             out_path = os.path.join(args.log_path, "bulk_data.h5")
             callbacks = CustomCallbacks(log_path=out_path, save_interval=args.bulk_log_interval, obs_dim=obs_dim)
@@ -382,6 +392,12 @@ def get_agent(env, args, non_vec_env=None):
                 updated_agent = ray_ppo.PPOTrainer(config=config, env=MicrogridEnvRLLib, logger_creator=logger_creator)
             elif args.gym_env == "planning":
                 updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLibPlanning, logger_creator=logger_creator)
+            elif args.gym_env == "curiosity":
+                updated_agent = ray_ppo.PPOTrainer(
+                    config=config, 
+                    env=SocialGameEnvRLLibIntrinsicMotivation, 
+                    logger_creator=logger_creator)
+
 
             if args.checkpoint:
                 old_weights = updated_agent.get_policy().get_weights()
@@ -410,7 +426,7 @@ def get_agent(env, args, non_vec_env=None):
         elif args.algo == "maml":
             config = ray_maml.DEFAULT_CONFIG.copy()
             config["framework"] = "tf1"
-            config["num_gpus"] = 1
+            config["num_gpus"] = args.num_gpus
             config["num_envs_per_worker"] = 2
             config["num_workers"] = args.maml_num_workers
             config["train_batch_size"] = 16
@@ -652,7 +668,15 @@ def parse_args():
         "--gym_env", 
         help="Which Gym Environment you wish to use",
         type=str,
-        choices=["socialgame", "microgrid", "planning", "planning_dagger", "extreme_intervention", "planning_guardrails"],
+        choices=[
+            "socialgame", 
+            "microgrid", 
+            "planning", 
+            "planning_dagger", 
+            "extreme_intervention", 
+            "planning_guardrails",
+            "curiosity",
+            ],
         default="socialgame"
     )
     parser.add_argument(
@@ -984,16 +1008,31 @@ def parse_args():
     parser.add_argument("--planning_num_data",
         help="Does nothing, included as a parameter so wandb logs it",
         type=int,
-        default=0)
+        default=0
+    )
     parser.add_argument("--oracle_noise_type",
         help="What kind of distribution the noise is sampled from",
         type=str, 
         choices=['uniform', 'normal'],
-        default='normal')
+        default='normal'
+    )
     parser.add_argument("--tou_replacement",
         help="Train with the planning model prediction of action or replace action with TOU",
         action="store_true",
-        default=False)
+        default=False
+        )
+    parser.add_argument("--total_intrinsic_steps",
+        help="total number of intrinsic motivation steps",
+        type=int,
+        default=20000
+    )
+    parser.add_argument("--num_gpus",
+        help="the number of GPUs your computer is blessed with",
+        type=int,
+        default= 0
+    )
+
+
     args = parser.parse_args()
     curr_datetime = str(dt.datetime.today())
     curr_datetime = ''.join(e for e in curr_datetime if e.isalnum())

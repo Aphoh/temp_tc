@@ -664,7 +664,9 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
         # Put loaded planning model into evaluation mode
         self.planning_net.eval()
         def model_wrapper_fn(action):
-            out, std = self.planning_net(torch.tensor(action.reshape([-1, 10])))
+            out, std = self.planning_net(
+                torch.tensor(
+                    action.reshape([-1, 10])))
             out = out.detach().numpy().flatten()
             return out, std
         self.planning_model = model_wrapper_fn
@@ -1011,6 +1013,116 @@ class SocialGameEnvRLLibGuardRail(SocialGameEnvRLLibPlanning):
         observation = self._get_observation()
         reward = self._get_reward(prev_price, energy_consumptions, reward_function = self.reward_function)
 
+        if self.use_smirl:
+            self.buffer.add(observation)
+
+        info = {}
+        return observation, reward, done, info
+
+
+class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
+    def __init__(self, env_config):
+        self.planning_type = "ANN"
+        super().__init__(
+            env_config=env_config
+        )
+        self.stds = []
+        self.intrinsic_motivation_step = 0
+        self.total_instrinsic_steps = env_config["total_intrinsic_steps"] ## need to set this
+    
+    def _simulate_humans_planning_model(self, action):
+        """
+        Purpose: A planning model to wrap simulate_humans. 
+
+        Args:
+            Action: 10-dim vector corresponding to action for each hour 
+
+        Returns:
+            Energy_consumption: Dictionary containing the energy usage by player and the average energy 
+        """
+        print("using planning model")
+        energy_consumptions = {}
+        total_consumption = np.zeros(10)
+
+        for player_name in self.player_dict:
+            #Get players response to agent's actions
+            player = self.player_dict[player_name]
+            if self.planning_type == "ANN":
+                player_energy, std = self.planning_model(action)
+                self.last_std = std
+                self.stds.append(std)
+            else:
+                player_energy = self.planning_model(action)
+ 
+            #Calculate energy consumption by player and in total (over the office)
+            energy_consumptions[player_name] = player_energy
+            total_consumption += player_energy
+
+        std_mean = np.mean(self.stds)
+
+        energy_consumptions["avg"] = total_consumption / self.number_of_participants
+        return energy_consumptions, std_mean
+
+
+    def step(self, action):
+        """
+        Purpose: Takes a step in the environment
+
+        Args:
+            Action: 10-dim vector detailing player incentive for each hour (8AM - 5PM)
+
+        Returns:
+            Observation: State for the next day
+            Reward: Reward for said action
+            Done: Whether or not the day is done (should always be True b/c of 1-step trajectory)
+            Info: Other info (primarily for gym env based library compatibility)
+
+        Exceptions:
+            raises AssertionError if action is not in the action space
+        """
+        
+        self.action = action
+
+        if not self.action_space.contains(action):
+            print("made it within the if statement in SG_E that tests if the action space doesn't have the action")
+            action = np.asarray(action)
+            if self.action_space_string == 'continuous':
+                action = np.clip(action, -1, 1) #TODO: check if correct
+
+            elif self.action_space_string == 'multidiscrete':
+                action = np.clip(action, 0, self.action_subspace - 1)
+
+        prev_price = self.prices[(self.day)]
+        self.day = (self.day + 1) % 365
+        self.curr_iter += 1
+        self.total_iter +=1
+
+        done = self.curr_iter > 0
+
+        points = self._points_from_action(action)
+
+        if self.intrinsic_motivation_step > self.total_instrinsic_steps:
+            # take a step in real
+            self.is_step_in_real = True
+            self.num_real_steps += 1
+            self.planning_step_cnt = 0
+            energy_consumptions = self._simulate_humans(points)
+            print("using real steps")
+            reward = self._get_reward(prev_price, energy_consumptions, reward_function = self.reward_function)
+
+        else: 
+            self.intrinsic_motivation_step += 1
+            # take a step in planning
+            self.is_step_in_real = False
+            energy_consumptions, std_mean = self._simulate_humans_planning_model(points)
+            reward = std_mean
+
+        # HACK ALERT. USING AVG ENERGY CONSUMPTION FOR STATE SPACE. this will not work if people are not all the same
+
+        self.prev_energy = energy_consumptions["avg"]
+
+        observation = self._get_observation()
+        
         if self.use_smirl:
             self.buffer.add(observation)
 
