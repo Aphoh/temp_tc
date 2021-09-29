@@ -125,7 +125,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 else:
                     print(log)
                 if args.checkpoint_interval != -1 and timesteps_total % args.checkpoint_interval == 0:
-                    ckpt_dir = "ppo_ckpts/{}{}.ckpt".format(wandb.run.name, timesteps_total)
+                    ckpt_dir = "rl_algos/ppo_ckpts/{}{}.ckpt".format(wandb.run.name, timesteps_total)
                     with open(ckpt_dir, "wb") as ckpt_file:
                         agent_weights = agent.get_policy().get_weights()
                         pickle.dump(agent_weights, ckpt_file)
@@ -594,9 +594,9 @@ def get_environment(args):
             points_multiplier=args.points_multiplier
         )
 
-    elif args.gym_env == "planning":
+    elif args.gym_env == "planning" or args.gym_env == "curiosity":
         gym_env = gym.make(
-            "gym_microgrid:socialgame{}".format(env_id),
+            f"gym_microgrid:socialgame_{args.gym_env}-v0",
             action_space_string=action_space_string,
             response_type_string=args.response_type_string,
             one_day=args.one_day,

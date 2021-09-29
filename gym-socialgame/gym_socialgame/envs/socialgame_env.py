@@ -12,7 +12,7 @@ from gym_socialgame.envs.buffers import (GaussianBuffer, GaussianCircularBuffer)
 from gym_socialgame.envs.planning_net import EnsembleModule, Net
 
 from sklearn.preprocessing import MinMaxScaler
-
+import IPython
 import torch
 class SocialGameEnv(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -1029,6 +1029,8 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
         self.stds = []
         self.intrinsic_motivation_step = 0
         self.total_instrinsic_steps = env_config["total_intrinsic_steps"] ## need to set this
+        self.last_predicted_cost = 1
+        IPython.embed()
     
     def _simulate_humans_planning_model(self, action):
         """
@@ -1116,6 +1118,8 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
             self.is_step_in_real = False
             energy_consumptions, std_mean = self._simulate_humans_planning_model(points)
             reward = std_mean
+            print("std reward mean")
+            print(reward)
 
         # HACK ALERT. USING AVG ENERGY CONSUMPTION FOR STATE SPACE. this will not work if people are not all the same
 

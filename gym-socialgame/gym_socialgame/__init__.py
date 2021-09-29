@@ -18,3 +18,7 @@ register(
 register(
 	id = "socialgame_planning-v0",
 	entry_point = "gym_socialgame.envs:SocialGamePlanningEnv")
+
+register(
+	id = "socialgame_curiosity-v0",
+	entry_point = "gym_socialgame.envs:SocialGameEnvRLLibIntrinsicMotivation")
