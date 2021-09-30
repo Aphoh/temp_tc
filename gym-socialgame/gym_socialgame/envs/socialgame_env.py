@@ -80,6 +80,8 @@ class SocialGameEnv(gym.Env):
         self.day_of_week_flag = day_of_week
         self.day_of_week = self.days_of_week[self.day % 5]
 
+        self.log_actions=True
+
         #Create Observation Space (aka State Space)
         self.observation_space = self._create_observation_space()
 

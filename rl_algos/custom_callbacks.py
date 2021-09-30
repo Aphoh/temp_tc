@@ -24,13 +24,26 @@ class CustomCallbacks(DefaultCallbacks):
     #               different for different types. So the __init__ still has both,
     #               but the rest of the functions here are _not_ for multiagent.
 
-    def __init__(self, log_path, save_interval, obs_dim=10, multiagent = False):
+    def __init__(self, log_path, save_interval, obs_dim=10, energy_consumption_dim = 24, multiagent = False):
         super().__init__()
         self.log_path = log_path + ".h5"
         self.save_interval = save_interval
         self.cols = ["step", "energy_reward", "smirl_reward", "energy_cost"]
         for i in range(obs_dim):
-            self.cols.append("observation_" + str(i))
+            self.cols.append("utility_price_hour_" + str(i))
+        
+        ## we're gonna have to change this if doing people agents
+        for i in range(24):
+            self.cols.append("agent_buy_price_hour_" + str(i))
+            self.cols.append("agent_sell_price_hour_" + str(i))
+
+        for i in range(energy_consumption_dim):
+            self.cols.append("prosumer_response_hour_" + str(i))
+
+        self.energy_consumption_dim = energy_consumption_dim
+        self.cols.append("pv_size")
+        self.cols.append("battery_size")
+        self.cols.append("sample_user")
         self.obs_dim = obs_dim
         self.multiagent = multiagent
 
@@ -99,11 +112,25 @@ class CustomCallbacks(DefaultCallbacks):
                 obs = socialgame_env._get_observation()
                 if obs is not None:
                     for i, k in enumerate(obs.flatten()):
-                        self.log_vals["observation_" + str(i)].append(k)
+                        self.log_vals["utility_price_hour_" + str(i)].append(k)
                 else:
                     for i in range(self.obs_dim):
-                        self.log_vals["observation_" + str(i)].append(np.nan)
-            
+                        self.log_vals["utility_price_hour_" + str(i)].append(np.nan)
+
+                # log the agent's prices 
+                for i, k in enumerate(socialgame_env.action.flatten()):
+                    if i < 24:
+                        self.log_vals["agent_buy_price_hour_" + str(i)].append(k)
+                    else:
+                        self.log_vals["agent_sell_price_hour_" + str(i - 24)].append(k)
+          
+                for i in range(self.energy_consumption_dim):
+                    self.log_vals["prosumer_response_hour_" + str(i)] = (
+                        socialgame_env.sample_user_response["prosumer_response_hour_" + str(i)]
+                    )
+                self.log_vals["pv_size"] = socialgame_env.sample_user_response["pv_size"]
+                self.log_vals["battery_size"] = socialgame_env.sample_user_response["battery_size"]
+                self.log_vals["sample_user"] = socialgame_env.sample_user_response["sample_user"]
 
 
                 self.steps_since_save += 1
@@ -138,10 +165,28 @@ class CustomCallbacks(DefaultCallbacks):
 
             if obs is not None:
                 for i, k in enumerate(obs.flatten()):
-                    self.log_vals["observation_" + str(i)].append(k)
+                    self.log_vals["utility_price_hour_" + str(i)].append(k)
             else:
                 for i in range(self.obs_dim):
-                    self.log_vals["observation_" + str(i)].append(np.nan)
+                    self.log_vals["utility_price_hour_" + str(i)].append(np.nan)
+
+            for i, k in enumerate(socialgame_env.action.flatten()):
+                if i < 24:
+                    self.log_vals["agent_buy_price_hour_" + str(i)].append(k)
+                else:
+                    self.log_vals["agent_sell_price_hour_" + str(i - 24)].append(k)
+
+            
+            IPython.embed()
+
+            for i in range(self.energy_consumption_dim):
+                self.log_vals["prosumer_response_hour_" + str(i)] = (
+                    socialgame_env.sample_user_response["prosumer_response_hour_" + str(i)]
+                )
+            self.log_vals["pv_size"] = socialgame_env.sample_user_response["pv_size"]
+            self.log_vals["battery_size"] = socialgame_env.sample_user_response["battery_size"]
+            self.log_vals["sample_user"] = socialgame_env.sample_user_response["sample_user"]
+
 
             self.steps_since_save += 1
             if self.steps_since_save == self.save_interval:
@@ -275,10 +320,16 @@ class CustomCallbacksMultiagent(CustomCallbacks):
         if obs is not None:
             for key, value in obs.items():
                 for i, k in enumerate(value.flatten()):
-                    self.log_vals[key]["observation_" + str(i)].append(k)
+                    self.log_vals[key]["utility_price_hour_" + str(i)].append(k)
         else:
             for i in range(self.obs_dim):
-                self.log_vals["observation_" + str(i)].append(np.nan)
+                self.log_vals["utility_price_hour_" + str(i)].append(np.nan)
+
+        for i, k in enumerate(socialgame_env.action.flatten()):
+            if i < 24:
+                self.log_vals["agent_buy_price_hour_" + str(i)].append(k)
+            else:
+                self.log_vals["agent_sell_price_hour_" + str(i - 24)].append(k)
 
         self.steps_since_save += 1
         if self.steps_since_save == self.save_interval:

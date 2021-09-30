@@ -29,7 +29,7 @@ class MicrogridEnv(gym.Env):
         manual_tou_magnitude=None,
         complex_batt_pv_scenario=1,
         exp_name = None,
-        two_price_state = False,
+        two_price_state = True,
         smirl_weight=None
         ):
         """
@@ -92,6 +92,10 @@ class MicrogridEnv(gym.Env):
         # self.prices = self.buyprices_grid #Initialise to buyprices_grid
         self.generation = self._get_generation()
 
+        # sample a user to save their responses
+        self.sample_user = np.random.choice(10, 1)
+        self.sample_user_response = {}
+
         #Day corresponds to day # of the yr
 
         #Cur_iter counts length of trajectory for current step (i.e. cur_iter = i^th hour in a 10-hour trajectory)
@@ -100,15 +104,18 @@ class MicrogridEnv(gym.Env):
         self.total_iter = 0
 
         #Create Action Space
-        self.action_length = 72 # TODO: Check with Utkarsha
+        self.action_length = ( 1 + self.two_price_state) * self.day_length 
         self.action_subspace = 3
         self.action_space = self._create_action_space()
+
+        self.action = np.repeat(np.nan, self.action_length)
 
         #Create Prosumers
         self.prosumer_dict = self._create_agents()
 
         #TODO: Check initialization of prev_energy
         self.prev_energy = np.zeros(self.day_length)
+        self.last_energy_cost = 0
 
         if self.use_smirl:
             self.buffer = GaussianBuffer(self.action_length)
@@ -222,6 +229,9 @@ class MicrogridEnv(gym.Env):
         else:
             print("you've inputted an incorrect scenario")
             raise AssertionError
+
+        self.pv_sizes = pvsizes
+        self.battery_sizes = battery_nums
 
         # Get energy from building_data.csv file,  each office building has readings in kWh. Interpolate to fill missing values
         df = pd.read_csv(
@@ -518,11 +528,45 @@ class MicrogridEnv(gym.Env):
             
             self.iteration += 1
 
+        self.store_sample_user(energy_consumptions)
+
         if self.use_smirl:
             self.buffer.add(observation)
 
         info = {}
         return observation, reward, done, info
+
+    def store_sample_user(self, energy_consumptions):
+        """ Stores the sample user reactions per day. 
+        
+        Args:
+            energy_consumptions: output from simulate_humans
+        """
+
+        self.sample_user_response["sample_user"] = (
+            "scenario_" + 
+            str(self.complex_batt_pv_scenario) + 
+            "_user_" + 
+            str(self.sample_user))
+
+        self.sample_user_response["pv_size"] = self.pv_sizes[self.sample_user]
+        self.sample_user_response["battery_size"] = self.battery_sizes[self.sample_user]
+
+        # get the building
+        prosumer = list(self.prosumer_dict.keys())[self.sample_user]
+        prosumer_consumptions = energy_consumptions[prosumer]
+
+        for i, k in enumerate(prosumer_consumptions.flatten()):
+            self.sample_user_response["prosumer_response_hour_" + str(i)] = k
+
+        if not self.iteration % 10:
+            self.sample_user = np.random.choice(10, 1)
+
+        self.energy_consumption_length = len(prosumer_consumptions)
+
+        IPython.embed()
+
+        return
 
     def _get_observation(self):
     
@@ -840,6 +884,8 @@ class CounterfactualMicrogridEnvRLLib(MicrogridEnvRLLib, MultiAgentEnv):
             )
             
             self.iteration += 1
+
+        self.store_sample_user(energy_consumptions)
 
         if self.use_smirl:
             self.buffer.add(observation)

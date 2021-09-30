@@ -126,7 +126,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
             elif args.gym_env == "microgrid":
                 config["env"] = MicrogridEnvRLLib
-                obs_dim = 72 * np.sum([args.energy_in_state, args.price_in_state])
+                obs_dim = 24 * args.energy_in_state + 48 * args.price_in_state
             elif args.gym_env == "counterfactual":
                 print("initializing the counterfactual environment")
                 config["env"] = CounterfactualMicrogridEnvRLLib
@@ -677,7 +677,7 @@ def parse_args():
         "--bulk_log_interval",
         help="Interval at which to save bulk log information",
         type=int,
-        default=10000
+        default=50
     )
     parser.add_argument(
         "--checkpoint",
