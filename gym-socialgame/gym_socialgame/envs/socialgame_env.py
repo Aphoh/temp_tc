@@ -1,3 +1,4 @@
+from math import isnan
 import gym
 from gym import spaces
 
@@ -10,6 +11,7 @@ from gym_socialgame.envs.reward import Reward
 from gym_socialgame.envs.buffers import (GaussianBuffer, GaussianCircularBuffer)
 
 from gym_socialgame.envs.planning_net import EnsembleModule, Net
+from numpy.linalg import multi_dot
 
 from sklearn.preprocessing import MinMaxScaler
 import IPython
@@ -357,7 +359,7 @@ class SocialGameEnv(gym.Env):
                    reward = player_reward.scaled_cost_distance(player_ideal_demands)
 
                 elif reward_function == "log_cost_regularized":
-                   reward = player_reward.log_cost_regularized()
+                   reward = player_reward.log_cost_regulariczed()
 
                 elif reward_function == "log_cost":
                     reward = player_reward.log_cost()
@@ -1031,6 +1033,22 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
         self.total_instrinsic_steps = env_config["total_intrinsic_steps"] ## need to set this
         #self.last_predicted_cost = 1
         #IPython.embed()
+
+    def _torch_mean_to_numpy(self, torch_array):
+        """ take the mean of a torch tensor and return as np array
+
+        Args:
+            torch_array: 2-d torch array
+        
+        Returns:
+            mu: mean
+        """
+        mu = torch.mean(torch_array[0]).detach().numpy()
+        if isnan(mu):
+            print("---------------------")
+            print("planning model mu is nan")
+            mu = 0
+        return mu
     
     def _simulate_humans_planning_model(self, action):
         """
@@ -1052,7 +1070,7 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
             if self.planning_type == "ANN":
                 player_energy, std = self.planning_model(action)
                 self.last_std = std
-                self.stds.append(std)
+                self.stds.append(self._torch_mean_to_numpy(std))
             else:
                 player_energy = self.planning_model(action)
  
@@ -1131,4 +1149,5 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
             self.buffer.add(observation)
 
         info = {}
+
         return observation, reward, done, info
