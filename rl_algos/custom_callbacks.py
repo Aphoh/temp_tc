@@ -101,7 +101,7 @@ class CustomCallbacks(DefaultCallbacks):
                 else:
                     self.log_vals["energy_cost"].append(np.nan)
 
-                if socialgame_env.last_predicted_cost:
+                if hasattr(socialgame_env, "last_predicted_cost") and socialgame_env.last_predicted_cost:
                     predicted_costs = socialgame_env.last_predicted_cost
                     episode.hist_data["predicted_costs"].append(predicted_costs)
                     episode.user_data["predicted_costs"].append(predicted_costs)

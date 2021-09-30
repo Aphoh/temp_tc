@@ -1029,8 +1029,8 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
         self.stds = []
         self.intrinsic_motivation_step = 0
         self.total_instrinsic_steps = env_config["total_intrinsic_steps"] ## need to set this
-        self.last_predicted_cost = 1
-        IPython.embed()
+        #self.last_predicted_cost = 1
+        #IPython.embed()
     
     def _simulate_humans_planning_model(self, action):
         """

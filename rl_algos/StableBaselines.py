@@ -461,6 +461,9 @@ def get_agent(env, args, non_vec_env=None):
             elif args.gym_env=="planning_guardrails":
                 env = SocialGameEnvRLLibGuardRail
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
+            elif args.gym_env=="curiosity":
+                env = SocialGameEnvRLLibIntrinsicMotivation
+                obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
             else:
                 env = SocialGameEnvRLLib
                 obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
