@@ -1,5 +1,8 @@
 import os
 import argparse
+import IPython
+
+parser = argparse.ArgumentParser()
 
 parser.add_argument('--intrinsic_rew', 
                     type=int,
@@ -14,16 +17,8 @@ rew = {0: "curiosity_mean",
     3: "curiosity_max"
     }
 
-command = f"python rl_algos/StableBaselines.py -w \
-    --library=rllib --num_steps=50000 --algo=ppo\
-        --checkpoint_interval=50 --gym_env=curiosity\
-        --bulk_log_interval=50 \
-        --ignore_warnings \
-        --base_log_dir=./logs/ \
-        --planning_steps=0 \
-        --planning_model=ANN \
-        --planning_ckpt=planning_ckpts_diverse2/100000 \
-        --intrinsic_rew={rew[args.intrinsic_rew]}\
-        --exp_name=socialgame"
+# IPython.embed()
+
+command = "python rl_algos/StableBaselines.py -w --library=rllib --num_steps=50000 --algo=ppo --checkpoint_interval=50 --gym_env=curiosity --bulk_log_interval=50 --ignore_warnings --base_log_dir=./logs/ --planning_steps=0  --planning_model=ANN --planning_ckpt=planning_ckpts_diverse2/100000 --intrinsic_rew={} --total_intrinsic_steps=50000 --exp_name=socialgame".format(rew[args.intrinsic_rew])
 
 os.system(command)
