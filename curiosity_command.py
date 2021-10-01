@@ -1,0 +1,29 @@
+import os
+import argparse
+
+parser.add_argument('--intrinsic_rew', 
+                    type=int,
+                    default=0,
+                    help='Rarity of extreme intervention (# of stds above rolling average)')
+
+args = parser.parse_args()
+
+rew = {0: "curiosity_mean",
+    1: "curiosity_l2_norm",
+    2: "apt",
+    3: "curiosity_max"
+    }
+
+command = f"python rl_algos/StableBaselines.py -w \
+    --library=rllib --num_steps=50000 --algo=ppo\
+        --checkpoint_interval=50 --gym_env=curiosity\
+        --bulk_log_interval=50 \
+        --ignore_warnings \
+        --base_log_dir=./logs/ \
+        --planning_steps=0 \
+        --planning_model=ANN \
+        --planning_ckpt=planning_ckpts_diverse2/100000 \
+        --intrinsic_rew={rew[args.intrinsic_rew]}\
+        --exp_name=socialgame"
+
+os.system(command)

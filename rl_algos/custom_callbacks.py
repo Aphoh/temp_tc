@@ -234,5 +234,6 @@ class CustomCallbacks(DefaultCallbacks):
                     episode.hist_data["energy_cost"][-1] = tou_cost
                     self.log_vals["energy_cost"][-1] = tou_cost
         if self.steps_since_save >= self.save_interval:
+            print("saving callback")
             self.save()
         return

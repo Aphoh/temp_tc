@@ -645,6 +645,7 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
         self.planning_model_path = env_config["planning_ckpt"]
         self.planning_type=env_config["planning_model"]
         self.planning_delay = env_config["planning_delay"]
+        self.intrinsic_reward = env_config["intrinsic_reward"]
         self.predicted_costs = []
         if self.planning_type == "OLS" or self.num_real_steps < self.planning_delay:
             print("Using OLS planning model")
@@ -1047,6 +1048,7 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
         if isnan(mu):
             print("---------------------")
             print("planning model mu is nan")
+            # IPython.embed()
             mu = 0
         return mu
     
@@ -1078,10 +1080,19 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
             energy_consumptions[player_name] = player_energy
             total_consumption += player_energy
 
-        std_mean = np.mean(self.stds)
+        if (self.intrinsic_reward=="curiosity_mean" or 
+            self.intrinsic_reward == "apt)":
+            intrinsic_reward = np.mean(self.stds)
+        elif self.intrinsic_reward =="curiosity_max":
+            intrinsic_reward = np.max(self.stds)
+        elif self.intrinsic_reward == "curiosity_l2_norm":
+            intrinsic_reward = np.linalg.norm(self.stds, ord = 2)
+        else:
+            print("Wrong intrinsic reward")
+            raise AssertionError
 
         energy_consumptions["avg"] = total_consumption / self.number_of_participants
-        return energy_consumptions, std_mean
+        return energy_consumptions, intrinsic_reward
 
 
     def step(self, action):
@@ -1134,8 +1145,22 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
             self.intrinsic_motivation_step += 1
             # take a step in planning
             self.is_step_in_real = False
-            energy_consumptions, std_mean = self._simulate_humans_planning_model(points)
-            reward = std_mean
+            energy_consumptions, intrinsic_reward = self._simulate_humans_planning_model(points)
+            reward = intrinsic_reward
+
+            if self.intrinsic_reward=="apt":
+                intrinsic_rewards = [intrinsic_reward]
+                for i in range(10):
+                    temp_points = points + np.random.uniform(
+                        low = -.01,
+                        high = .01,
+                        size = 10)
+                    temp_points = np.clip(temp_points, 0, 10)
+                    energy_consumptions, intrinsic_reward = self._simulate_humans_planning_model(temp_points)
+                    intrinsic_rewards.append(intrinsic_reward)
+                
+                reward = np.mean(intrinsic_rewards)
+
             print("std reward mean")
             print(reward)
 

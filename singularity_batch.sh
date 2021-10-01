@@ -38,5 +38,7 @@ LOGDIR_BASE=$BASE_DIR/logs
 rm -rf $LDIR
 mkdir -p $LDIR
 
-singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME --bind "$LDIR:$HOME/.local" --env SMIRL_VAL=$SMIRL_VAL library://aphoh/default/sg-k80-env:v1 \
-  sh -c './singularity_preamble.sh && ./batch_microgrid_run.sh $SMIRL_VAL $LOGDIR_BASE'
+singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME \
+  --bind "$LDIR:$HOME/.local" \
+  docker://lucasspangher/socialgame_v1 \
+  sh -c './singularity_preamble.sh && ./../intrinsic_curiosity_experiment.sh'

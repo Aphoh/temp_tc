@@ -1027,19 +1027,29 @@ def parse_args():
     parser.add_argument("--total_intrinsic_steps",
         help="total number of intrinsic motivation steps",
         type=int,
-        default=20000
+        default=2000
     )
     parser.add_argument("--num_gpus",
         help="the number of GPUs your computer is blessed with",
         type=int,
         default= 0
     )
+    parser.add_argument("--intrinsic_reward",
+        help="the type of curiosity reward to use",
+        type="str",
+        choices=["curiosity_mean",
+            "curiosity_max",
+            "curiosity_l2_norm",
+            "apt"
+        ],
+        default="curiosity_mean"
+    )
 
 
     args = parser.parse_args()
     curr_datetime = str(dt.datetime.today())
     curr_datetime = ''.join(e for e in curr_datetime if e.isalnum())
-    args.log_path = os.path.join(os.path.abspath(args.base_log_dir), "{}_{}".format(args.exp_name, curr_datetime))
+    args.log_path = os.path.join(os.path.abspath(args.base_log_dir), "{}_{}_{}".format(args.gym_env, args.exp_name, curr_datetime))
 
     os.makedirs(args.log_path, exist_ok=True)
 
