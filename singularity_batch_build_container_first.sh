@@ -37,8 +37,10 @@ LOGDIR_BASE=$BASE_DIR/logs
 
 rm -rf $LDIR
 mkdir -p $LDIR
-  
+
+singularity build lucas_test.simg docker://lucasspangher/socialgame_v1
+
 singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME \
   --bind "$LDIR:$HOME/.local" \
-  docker://lucasspangher/socialgame_v1 \
+  lucas_test.simg \
   sh -c './singularity_preamble.sh && ./../intrinsic_curiosity_experiment.sh'
