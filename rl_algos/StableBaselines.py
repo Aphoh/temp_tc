@@ -1036,8 +1036,9 @@ def parse_args():
     )
     parser.add_argument("--intrinsic_reward",
         help="the type of curiosity reward to use",
-        type="str",
-        choices=["curiosity_mean",
+        type=str,
+        choices=[
+            "curiosity_mean",
             "curiosity_max",
             "curiosity_l2_norm",
             "apt"
