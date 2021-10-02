@@ -1080,8 +1080,7 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
             energy_consumptions[player_name] = player_energy
             total_consumption += player_energy
 
-        if (self.intrinsic_reward=="curiosity_mean" or 
-            self.intrinsic_reward == "apt)":
+        if self.intrinsic_reward=="curiosity_mean" or self.intrinsic_reward == "apt":
             intrinsic_reward = np.mean(self.stds)
         elif self.intrinsic_reward =="curiosity_max":
             intrinsic_reward = np.max(self.stds)
