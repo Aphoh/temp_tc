@@ -812,7 +812,7 @@ def parse_args():
         "--reward_function",
         help="reward function to test",
         type=str,
-        default="log_cost_regularized",
+        default="log_cost",
         choices=["scaled_cost_distance", "log_cost_regularized", "log_cost", "scd", "lcr", "lc", "market_solving", "profit_maximizing"],
     )
     parser.add_argument(

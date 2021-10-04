@@ -359,7 +359,7 @@ class SocialGameEnv(gym.Env):
                    reward = player_reward.scaled_cost_distance(player_ideal_demands)
 
                 elif reward_function == "log_cost_regularized":
-                   reward = player_reward.log_cost_regulariczed()
+                   reward = player_reward.log_cost_regularized()
 
                 elif reward_function == "log_cost":
                     reward = player_reward.log_cost()
@@ -1071,6 +1071,12 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
             player = self.player_dict[player_name]
             if self.planning_type == "ANN":
                 player_energy, std = self.planning_model(action)
+                # check for nans
+                if torch.sum(torch.isnan(std)).detach().numpy():
+                    print("NAs in planning model output: " + 
+                        str(torch.sum(torch.isnan(std)).detach().numpy()))
+                    std[torch.isnan(std)] = 0
+
                 self.last_std = std
                 self.stds.append(self._torch_mean_to_numpy(std))
             else:
@@ -1113,6 +1119,10 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
         
         self.action = action
 
+        if np.sum(np.isnan(action) > 0):
+            print("Actions are nan")
+            action[np.isnan(action)] = 0
+
         if not self.action_space.contains(action):
             print("made it within the if statement in SG_E that tests if the action space doesn't have the action")
             action = np.asarray(action)
@@ -1139,6 +1149,7 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
             energy_consumptions = self._simulate_humans(points)
             print("using real steps")
             reward = self._get_reward(prev_price, energy_consumptions, reward_function = self.reward_function)
+            print("real reward" + reward)
 
         else: 
             self.intrinsic_motivation_step += 1
@@ -1146,6 +1157,9 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
             self.is_step_in_real = False
             energy_consumptions, intrinsic_reward = self._simulate_humans_planning_model(points)
             reward = intrinsic_reward
+            if np.sum(np.isnan(reward)):
+                print("Planning model output is _still_ nan")
+                reward = 0 
 
             if self.intrinsic_reward=="apt":
                 intrinsic_rewards = [intrinsic_reward]
