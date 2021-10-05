@@ -16,8 +16,8 @@ parser.add_argument('--steps',
 
 args = parser.parse_args()
 
-rew = {0: "curiosity_mean",
-    1: "curiosity_l2_norm",
+rew = {#0: "curiosity_mean",
+    #1: "curiosity_l2_norm",
     2: "apt",
     3: "curiosity_max",
     4: "control"
