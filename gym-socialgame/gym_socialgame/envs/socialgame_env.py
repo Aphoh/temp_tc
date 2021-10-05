@@ -667,9 +667,6 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLib):
             torch.tensor(
                 action.reshape([-1, 10])))
         out = out.detach().numpy().flatten()
-
-
-        
         return out, std
 
     def _torch_mean_to_numpy(self, torch_array):
@@ -726,6 +723,8 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLib):
             intrinsic_reward = np.max(self.stds)
         elif self.intrinsic_reward == "curiosity_l2_norm":
             intrinsic_reward = np.linalg.norm(self.stds, ord = 2)
+        elif self.intrinsic_reward == "control"
+            intrinsic_reward = "None"
         else:
             print("Wrong intrinsic reward")
             raise AssertionError
@@ -775,6 +774,9 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLib):
         done = self.curr_iter > 0
 
         points = self._points_from_action(action)
+
+        if self.intrinsic_reward == "control":
+            self.total_instrinsic_steps = -1
 
         if self.intrinsic_motivation_step > self.total_instrinsic_steps:
             # take a step in real
