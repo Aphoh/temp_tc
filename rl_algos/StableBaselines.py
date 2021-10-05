@@ -17,6 +17,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.env_checker import check_env
 
 import gym_socialgame.envs.utils as env_utils
+
 from gym_socialgame.envs.socialgame_env import (
     SocialGameEnvRLLib, 
     SocialGameMetaEnv,
@@ -497,7 +498,8 @@ def parse_args():
             "curiosity_mean",
             "curiosity_max",
             "curiosity_l2_norm",
-            "apt"
+            "apt",
+            "control",
         ],
         default="curiosity_mean"
     )
