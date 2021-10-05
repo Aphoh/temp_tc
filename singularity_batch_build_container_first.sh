@@ -29,7 +29,7 @@
 VALS=(0 0.10 0.125)
 SMIRL_VAL=${VALS[$SLURM_ARRAY_TASK_ID]}
 
-BASE_DIR=/global/scratch/$USER
+BASE_DIR=/global/scratch/users/$USER
 
 LDIR=$BASE_DIR/.local$SLURM_ARRAY_TASK_ID
 LOGDIR_BASE=$BASE_DIR/logs
@@ -38,11 +38,22 @@ LOGDIR_BASE=$BASE_DIR/logs
 rm -rf $LDIR
 mkdir -p $LDIR
 
+rm -rf /global/home/users/lucas_spangher/.cache/pip
+
 SINGULARITY_IMAGE_LOCATION=/global/scratch/users/$USER
+SINGULARITY_CACHEDIR=$BASE_DIR/.singularity/cache
+export SINGULARITY_CACHEDIR=$BASE_DIR/.singularity/cache
 
-singularity build /global/scratch/users/$USER/lucas_test.simg docker://lucasspangher/socialgame_v1
+SINGULARITY_TEMPDIR=$BASE_DIR/tmp
+export SINGULARITY_TEMPDIR=$BASEDIR/tmp
 
+if test -f "$BASE_DIR/lucas_test.simg"; then
+    echo "image exists"
+else
+    singularity build /global/scratch/users/$USER/lucas_test.simg docker://lucasspangher/socialgame_v1
+fi
+    
 singularity exec --nv --workdir ./tmp --bind $SINGULARITY_IMAGE_LOCATION \
   --bind "$LDIR:$HOME/.local" \
   /global/scratch/users/$USER/lucas_test.simg \
-  sh -c './singularity_preamble.sh && ./../intrinsic_curiosity_experiment.sh'
+  sh -c 'bash singularity_preamble.sh && bash intrinsic_curiosity_experiment.sh'
