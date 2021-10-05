@@ -38,9 +38,11 @@ LOGDIR_BASE=$BASE_DIR/logs
 rm -rf $LDIR
 mkdir -p $LDIR
 
-singularity build lucas_test.simg docker://lucasspangher/socialgame_v1
+SINGULARITY_IMAGE_LOCATION=/global/scratch/users/$USER
 
-singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME \
+singularity build /global/scratch/users/$USER/lucas_test.simg docker://lucasspangher/socialgame_v1
+
+singularity exec --nv --workdir ./tmp --bind $SINGULARITY_IMAGE_LOCATION \
   --bind "$LDIR:$HOME/.local" \
-  lucas_test.simg \
+  /global/scratch/users/$USER/lucas_test.simg \
   sh -c './singularity_preamble.sh && ./../intrinsic_curiosity_experiment.sh'
