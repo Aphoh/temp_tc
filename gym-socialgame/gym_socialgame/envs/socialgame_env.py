@@ -723,8 +723,8 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLib):
             intrinsic_reward = np.max(self.stds)
         elif self.intrinsic_reward == "curiosity_l2_norm":
             intrinsic_reward = np.linalg.norm(self.stds, ord = 2)
-        elif self.intrinsic_reward == "control"
-            intrinsic_reward = "None"
+        elif self.intrinsic_reward == "control":
+            intrinsic_reward = 0
         else:
             print("Wrong intrinsic reward")
             raise AssertionError
