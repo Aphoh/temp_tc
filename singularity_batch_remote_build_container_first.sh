@@ -42,5 +42,5 @@ SINGULARITY_IMAGE_LOCATION=/global/scratch/users/$USER
 
 singularity exec --nv --workdir ./tmp --bind $SINGULARITY_IMAGE_LOCATION \
   --bind "$LDIR:$HOME/.local" \
-  library://lucas-spangher/remote-builds/rb-615ba793b2c396dec3ed15c3:latest//
+  library://lucas-spangher/remote-builds/rb-615ba793b2c396dec3ed15c3:latest// \
   sh -c './singularity_preamble.sh && ./../intrinsic_curiosity_experiment.sh'
