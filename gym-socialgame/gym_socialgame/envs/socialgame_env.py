@@ -1181,6 +1181,7 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
                         high = .01,
                         size = 10)
                     temp_points = np.clip(temp_points, 0, 10)
+                    temp_points = np.asarray(temp_points, dtype=np.float32)
                     energy_consumptions, intrinsic_reward = self._simulate_humans_planning_model(temp_points)
                     intrinsic_rewards.append(intrinsic_reward)
                 
