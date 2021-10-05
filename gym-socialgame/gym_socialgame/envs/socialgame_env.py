@@ -8,6 +8,9 @@ from gym_socialgame.envs.utils import price_signal
 from gym_socialgame.envs.agents import *
 from gym_socialgame.envs.reward import Reward
 from gym_socialgame.envs.buffers import GaussianBuffer
+from gym_socialgame.envs.planning_net import (EnsembleModule, Net)
+import IPython
+import torch
 
 class SocialGameEnv(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -497,6 +500,10 @@ class SocialGameEnvRLLib(SocialGameEnv):
         )
         print("Initialized RLLib child class")
 
+
+
+### addung 
+
 class SocialGameMetaEnv(SocialGameEnvRLLib):
 
     def __init__(self,
@@ -615,3 +622,217 @@ class SocialGameMetaEnv(SocialGameEnvRLLib):
         return player_dict
 
 
+class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLib):
+    def __init__(self, env_config):
+        self.planning_type = "ANN"
+        super().__init__(
+            env_config=env_config
+        )
+        self.is_step_in_real=False
+        self.stds = []
+        self.intrinsic_motivation_step = 0
+        self.total_instrinsic_steps = env_config["total_intrinsic_steps"] ## need to set this
+        self.last_predicted_cost = 1
+        #IPython.embed()
+        self.planning_model_path = env_config["planning_ckpt"]
+        self.test_step = 0
+
+        self.num_real_steps = 0 
+        self.planning_model = self.swap_to_ANN()
+        self.intrinsic_reward = env_config["intrinsic_reward"]
+        self.use_smirl =  True
+        self.last_smirl_reward = True
+        if self.use_smirl:
+            self.buffer = GaussianBuffer(self.action_length)
+            self.smirl_weight = .001
+
+    def swap_to_ANN(self):
+        print("Using ANN planning model")
+        #self.planning_net = Net(10, 32, 10)
+        #self.planning_net.load_state_dict(torch.load(self.planning_model_path))
+        self.planning_net = EnsembleModule.load_from_checkpoint(self.planning_model_path, n_feature=10, n_output=10, n_hidden=64, n_layers=5, n_networks=24, lr=3e-4).model
+        # Put loaded planning model into evaluation mode
+        self.planning_net.eval()
+        def model_wrapper_fn(action):
+            out, std = self.planning_net(
+                torch.tensor(
+                    action.reshape([-1, 10])))
+            out = out.detach().numpy().flatten()
+            return out, std
+        self.planning_model = model_wrapper_fn
+
+    ## trying a different way:
+    def evaluate_planning_model(self, action):
+        out, std = self.planning_net(
+            torch.tensor(
+                action.reshape([-1, 10])))
+        out = out.detach().numpy().flatten()
+
+
+        
+        return out, std
+
+    def _torch_mean_to_numpy(self, torch_array):
+        """ take the mean of a torch tensor and return as np array
+        Args:
+            torch_array: 2-d torch array
+        
+        Returns:
+            mu: mean
+        """
+        mu = torch.mean(torch_array[0]).detach().numpy()
+        if np.isnan(mu):
+            print("---------------------")
+            print("planning model mu is nan")
+            # IPython.embed()
+            mu = 0
+        return mu
+
+    def _simulate_humans_planning_model(self, action):
+        """
+        Purpose: A planning model to wrap simulate_humans. 
+        Args:
+            Action: 10-dim vector corresponding to action for each hour 
+        Returns:
+            Energy_consumption: Dictionary containing the energy usage by player and the average energy 
+        """
+        print("using planning model")
+        energy_consumptions = {}
+        total_consumption = np.zeros(10)
+
+        for player_name in self.player_dict:
+            #Get players response to agent's actions
+            player = self.player_dict[player_name]
+            if self.planning_type == "ANN":
+                player_energy, std = self.evaluate_planning_model(action)
+                # check for nans
+                if torch.sum(torch.isnan(std)).detach().numpy():
+                    print("NAs in planning model output: " + 
+                        str(torch.sum(torch.isnan(std)).detach().numpy()))
+                    std[torch.isnan(std)] = 0
+
+                self.last_std = std
+                self.stds.append(self._torch_mean_to_numpy(std))
+            else:
+                player_energy = self.planning_model(action)
+ 
+            #Calculate energy consumption by player and in total (over the office)
+            energy_consumptions[player_name] = player_energy
+            total_consumption += player_energy
+
+        if self.intrinsic_reward=="curiosity_mean" or self.intrinsic_reward == "apt":
+            intrinsic_reward = np.mean(self.stds)
+        elif self.intrinsic_reward =="curiosity_max":
+            intrinsic_reward = np.max(self.stds)
+        elif self.intrinsic_reward == "curiosity_l2_norm":
+            intrinsic_reward = np.linalg.norm(self.stds, ord = 2)
+        else:
+            print("Wrong intrinsic reward")
+            raise AssertionError
+
+        energy_consumptions["avg"] = total_consumption / self.number_of_participants
+        return energy_consumptions, intrinsic_reward
+
+
+    def step(self, action):
+        """
+        Purpose: Takes a step in the environment
+        Args:
+            Action: 10-dim vector detailing player incentive for each hour (8AM - 5PM)
+        Returns:
+            Observation: State for the next day
+            Reward: Reward for said action
+            Done: Whether or not the day is done (should always be True b/c of 1-step trajectory)
+            Info: Other info (primarily for gym env based library compatibility)
+        Exceptions:
+            raises AssertionError if action is not in the action space
+        """
+        
+        self.action = action
+
+        self.test_step+=1
+        print("test_step: " + str(self.test_step))
+
+        if np.sum(np.isnan(action) > 0):
+            print("Actions are nan")
+            IPython.embed()
+            action[np.isnan(action)] = 0
+
+        if not self.action_space.contains(action):
+            print("made it within the if statement in SG_E that tests if the action space doesn't have the action")
+            action = np.asarray(action)
+            if self.action_space_string == 'continuous':
+                action = np.clip(action, -1, 1) #TODO: check if correct
+
+            elif self.action_space_string == 'multidiscrete':
+                action = np.clip(action, 0, self.action_subspace - 1)
+
+        prev_price = self.prices[(self.day)]
+        self.day = (self.day + 1) % 365
+        self.curr_iter += 1
+        self.total_iter +=1
+
+        done = self.curr_iter > 0
+
+        points = self._points_from_action(action)
+
+        if self.intrinsic_motivation_step > self.total_instrinsic_steps:
+            # take a step in real
+            self.is_step_in_real = True
+            self.num_real_steps += 1
+            self.planning_step_cnt = 0
+            energy_consumptions = self._simulate_humans(points)
+            print("using real steps")
+            reward = self._get_reward(prev_price, energy_consumptions, reward_function = self.reward_function)
+            print("real reward: " + str(reward))
+
+        else: 
+            self.intrinsic_motivation_step += 1
+            # take a step in planning
+            self.is_step_in_real = False
+            energy_consumptions, intrinsic_reward = self._simulate_humans_planning_model(points)
+            reward = intrinsic_reward
+            if np.sum(np.isnan(reward)):
+                print("Planning model output is _still_ nan")
+                reward = 0 
+
+            if self.intrinsic_reward=="apt":
+                intrinsic_rewards = [intrinsic_reward]
+                for i in range(10):
+                    temp_points = points + np.random.uniform(
+                        low = -.01,
+                        high = .01,
+                        size = 10)
+                    temp_points = np.clip(temp_points, 0, 10)
+                    temp_points = np.asarray(temp_points, dtype=np.float32)
+                    energy_consumptions, intrinsic_reward = self._simulate_humans_planning_model(temp_points)
+                    intrinsic_rewards.append(intrinsic_reward)
+                
+                reward = np.mean(intrinsic_rewards)
+
+            print("std reward mean")
+            print(reward)
+
+        # HACK ALERT. USING AVG ENERGY CONSUMPTION FOR STATE SPACE. this will not work if people are not all the same
+
+        self.prev_energy = energy_consumptions["avg"]
+
+        self.add_last_cost = False
+
+        self.last_smirl_reward = reward
+        self.last_energy_reward = reward
+        self.record_last_cost = True
+        if self.record_last_cost:
+            self.last_energy_cost = reward # 500 hardcoded for now
+        if self.add_last_cost:
+            self.costs.append(self.last_energy_cost)
+
+        self.last_predicted_cost = 0
+        observation = self._get_observation()
+        
+        if self.use_smirl:
+            self.buffer.add(observation)
+
+        info = {}
+
+        return observation, reward, done, info
