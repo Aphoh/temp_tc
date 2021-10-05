@@ -321,7 +321,6 @@ class SocialGameEnv(gym.Env):
                 player_energy = player.get_response(action, day_of_week = None)
 
             if np.sum(player_energy<0) > 0:
-                print("negative player energies") 
                 player_energy = np.abs(player_energy)
 
             #Calculate energy consumption by player and in total (over the office)
@@ -1035,10 +1034,11 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
         super().__init__(
             env_config=env_config
         )
+        self.is_step_in_real=False
         self.stds = []
         self.intrinsic_motivation_step = 0
         self.total_instrinsic_steps = env_config["total_intrinsic_steps"] ## need to set this
-        #self.last_predicted_cost = 1
+        self.last_predicted_cost = 1
         #IPython.embed()
 
         self.test_step = 0
@@ -1193,6 +1193,16 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
 
         self.prev_energy = energy_consumptions["avg"]
 
+        self.last_smirl_reward = 0
+        self.last_energy_reward = 0
+        self.record_last_cost = True
+        if self.record_last_cost:
+            self.last_energy_cost = 0 # 500 hardcoded for now
+        if self.add_last_cost:
+            self.costs.append(self.last_energy_cost)
+
+        self.record_last_cost = False
+        self.last_predicted_cost = 0
         observation = self._get_observation()
         
         if self.use_smirl:
