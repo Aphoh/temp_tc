@@ -34,26 +34,19 @@ BASE_DIR=/global/scratch/users/$USER
 LDIR=$BASE_DIR/.local$SLURM_ARRAY_TASK_ID
 LOGDIR_BASE=$BASE_DIR/logs
 
+export SINGULARITY_CACHEDIR=$BASEDIR/.singularity/cache/
+export SINGULARITY_TEMPDIR=$BASEDIR/tmp
+
+SINGULARITY_CACHEDIR=$BASEDIR/.singularity/cache
+SINGULARITY_TEMPDIR=$BASEDIR/tmp
+
 
 rm -rf $LDIR
 mkdir -p $LDIR
 
-rm -rf /global/home/users/lucas_spangher/.cache/pip
-
 SINGULARITY_IMAGE_LOCATION=/global/scratch/users/$USER
-SINGULARITY_CACHEDIR=$BASE_DIR/.singularity/cache
-export SINGULARITY_CACHEDIR=$BASE_DIR/.singularity/cache
 
-SINGULARITY_TEMPDIR=$BASE_DIR/tmp
-export SINGULARITY_TEMPDIR=$BASEDIR/tmp
 
-if test -f "$BASE_DIR/lucas_test.simg"; then
-    echo "image exists"
-else
-    singularity build /global/scratch/users/$USER/lucas_test.simg docker://lucasspangher/socialgame_v1
-fi
-    
-singularity exec --nv --workdir ./tmp --bind $SINGULARITY_IMAGE_LOCATION \
-  --bind "$LDIR:$HOME/.local" \
-  /global/scratch/users/$USER/lucas_test.simg \
-  sh -c 'bash singularity_preamble.sh && bash intrinsic_curiosity_experiment.sh'
+singularity exec --nv --workdir -E ./tmp --bind $SINGULARITY_IMAGE_LOCATION:$(pwd) library://lucas-spangher/remote-builds/rb-615ba793b2c396dec3ed15c3:latest// \
+  sh -c './singularity_preamble.sh && ./intrinsic_curiosity_experiment.sh'
+
