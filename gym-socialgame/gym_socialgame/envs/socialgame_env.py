@@ -320,6 +320,10 @@ class SocialGameEnv(gym.Env):
             else:
                 player_energy = player.get_response(action, day_of_week = None)
 
+            if np.sum(player_energy<0) > 0:
+                print("negative player energies") 
+                player_energy = np.abs(player_energy)
+
             #Calculate energy consumption by player and in total (over the office)
             energy_consumptions[player_name] = player_energy
             total_consumption += player_energy
@@ -399,6 +403,8 @@ class SocialGameEnv(gym.Env):
         Exceptions:
             raises AssertionError if action is not in the action space
         """
+
+
         self.action = action
 
         if not self.action_space.contains(action):
@@ -1035,6 +1041,8 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
         #self.last_predicted_cost = 1
         #IPython.embed()
 
+        self.test_step = 0
+
     def _torch_mean_to_numpy(self, torch_array):
         """ take the mean of a torch tensor and return as np array
 
@@ -1119,8 +1127,12 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
         
         self.action = action
 
+        self.test_step+=1
+        print("test_step: " + str(self.test_step))
+
         if np.sum(np.isnan(action) > 0):
             print("Actions are nan")
+            IPython.embed()
             action[np.isnan(action)] = 0
 
         if not self.action_space.contains(action):
@@ -1149,7 +1161,7 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLibPlanning):
             energy_consumptions = self._simulate_humans(points)
             print("using real steps")
             reward = self._get_reward(prev_price, energy_consumptions, reward_function = self.reward_function)
-            print("real reward" + reward)
+            print("real reward: " + str(reward))
 
         else: 
             self.intrinsic_motivation_step += 1
