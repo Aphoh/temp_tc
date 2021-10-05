@@ -17,7 +17,10 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.env_checker import check_env
 
 import gym_socialgame.envs.utils as env_utils
-from gym_socialgame.envs.socialgame_env import (SocialGameEnvRLLib, SocialGameMetaEnv)
+from gym_socialgame.envs.socialgame_env import (
+    SocialGameEnvRLLib, 
+    SocialGameMetaEnv,
+    SocialGameEnvRLLibIntrinsicMotivation)
 
 import ray
 import ray.rllib.agents.ppo as ray_ppo
@@ -80,21 +83,29 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
         if args.algo=="ppo":
             CustomCallbacks.out_name = args.exp_name + ".csv"
-            train_batch_size = 256
+            train_batch_size = 2
             config = ray_ppo.DEFAULT_CONFIG.copy()
             config["framework"] = "torch"
             config["train_batch_size"] = train_batch_size
-            config["sgd_minibatch_size"] = 16
+            config["sgd_minibatch_size"] = 2
             config["lr"] = 0.0002
             config["clip_param"] = 0.3
-            config["num_gpus"] =  1
+            config["num_gpus"] =  0
             config["num_workers"] = 1
             config["env"] = SocialGameEnvRLLib
             config["callbacks"] = CustomCallbacks
             config["env_config"] = vars(args)
+            
+            if args.gym_env == "curiosity":
+                config["env"] = SocialGameEnvRLLibIntrinsicMotivation
+                # obs_dim = 10 * np.sum([args.energy_in_state, args.price_in_state])
+            
             logger_creator = utils.custom_logger_creator(args.log_path)
 
-            updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
+            if args.gym_env == "curiosity":
+                updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLibIntrinsicMotivation, logger_creator=logger_creator)
+            else:
+                updated_agent = ray_ppo.PPOTrainer(config=config, env=SocialGameEnvRLLib, logger_creator=logger_creator)
             to_log = ["episode_reward_mean"]
             for i in range(int(np.ceil(num_steps/train_batch_size))):
                 result = updated_agent.train()
@@ -108,7 +119,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
 
         elif args.algo=="maml":
             config = ray_maml.DEFAULT_CONFIG.copy()
-            config["num_gpus"] = 1
+            config["num_gpus"] = 0
             config["train_batch_size"] = train_batch_size
             config["num_workers"] = 4
             config["env"] = SocialGameMetaEnv
@@ -418,7 +429,7 @@ def parse_args():
         help="Which planning model to use",
         type=str,
         default="Oracle",
-        choices=["Oracle", "Baseline", "LSTM", "OLS"],
+        choices=["Oracle", "Baseline", "LSTM", "OLS", "ANN"],
     )
     parser.add_argument(
         "--pricing_type",
@@ -466,6 +477,45 @@ def parse_args():
         help="Whether to run with SMiRL. When using SMiRL you must specify a weight.",
         type = float,
         default=None,
+    )
+    parser.add_argument(
+        "--planning_ckpt",
+        help="Checkpoint to use for planning model ANN",
+        type=str,
+        default="model_weights.pth"
+    )
+    parser.add_argument("--total_intrinsic_steps",
+        help="total number of intrinsic motivation steps",
+        type=int,
+        default=2000
+    )
+
+    parser.add_argument("--intrinsic_reward",
+        help="the type of curiosity reward to use",
+        type=str,
+        choices=[
+            "curiosity_mean",
+            "curiosity_max",
+            "curiosity_l2_norm",
+            "apt"
+        ],
+        default="curiosity_mean"
+    )
+
+    parser.add_argument(
+        "--gym_env", 
+        help="Which Gym Environment you wish to use",
+        type=str,
+        choices=[
+            "socialgame", 
+            "microgrid", 
+            "planning", 
+            "planning_dagger", 
+            "extreme_intervention", 
+            "planning_guardrails",
+            "curiosity",
+            ],
+        default="socialgame"
     )
 
     args = parser.parse_args()
