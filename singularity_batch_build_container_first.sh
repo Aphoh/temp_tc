@@ -56,4 +56,4 @@ fi
 singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME \
   --bind "$LDIR:$HOME/.local" \
   /global/scratch/users/$USER/lucas_test.sif \
-  sh -c 'bash singularity_preamble.sh && bash intrinsic_curiosity_experiment.sh'
+  sh -c 'bash singularity_preamble.sh && python curiosity_command.py'
