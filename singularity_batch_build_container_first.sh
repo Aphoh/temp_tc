@@ -41,11 +41,12 @@ mkdir -p $LDIR
 rm -rf /global/home/users/lucas_spangher/.cache/pip
 
 SINGULARITY_IMAGE_LOCATION=/global/scratch/users/$USER
+
 SINGULARITY_CACHEDIR=$BASE_DIR/.singularity/cache
 export SINGULARITY_CACHEDIR=$BASE_DIR/.singularity/cache
 
 SINGULARITY_TEMPDIR=$BASE_DIR/tmp
-export SINGULARITY_TEMPDIR=$BASEDIR/tmp
+export SINGULARITY_TEMPDIR=$BASE_DIR/tmp
 
 if test -f "$BASE_DIR/lucas_test.sif"; then
     echo "image exists"
