@@ -20,7 +20,8 @@ rew = {0: "curiosity_mean",
     1: "curiosity_l2_norm",
     2: "apt",
     3: "curiosity_max",
-    4: "control"
+    4: "control",
+    5: "higher_percentile",
     }
 
 # IPython.embed()

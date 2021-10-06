@@ -500,6 +500,7 @@ def parse_args():
             "curiosity_l2_norm",
             "apt",
             "control",
+            "higher_percentile"
         ],
         default="curiosity_mean"
     )

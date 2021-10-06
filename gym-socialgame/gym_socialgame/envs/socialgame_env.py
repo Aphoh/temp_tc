@@ -723,6 +723,8 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLib):
             intrinsic_reward = np.max(self.stds)
         elif self.intrinsic_reward == "curiosity_l2_norm":
             intrinsic_reward = np.linalg.norm(self.stds, ord = 2)
+        elif self.intrinsic_reward == "higher_percentile":
+            intrinsic_reward = ( np.mean(self.stds) + np.max(self.stds) ) / 2
         elif self.intrinsic_reward == "control":
             intrinsic_reward = 0
         else:
@@ -775,10 +777,8 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLib):
 
         points = self._points_from_action(action)
 
-        if self.intrinsic_reward == "control":
-            self.total_instrinsic_steps = -1
 
-        if self.intrinsic_motivation_step > self.total_instrinsic_steps:
+        if (self.intrinsic_motivation_step > self.total_instrinsic_steps) or (self.intrinsic_reward=="control"):
             # take a step in real
             self.is_step_in_real = True
             self.num_real_steps += 1
