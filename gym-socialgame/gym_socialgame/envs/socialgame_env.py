@@ -840,7 +840,7 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLib):
         observation = self._get_observation()
         
         if self.use_smirl:
-            self.buffer.add(observation)
+            self.buffer.add(np.zeros(10))
 
         info = {}
 
