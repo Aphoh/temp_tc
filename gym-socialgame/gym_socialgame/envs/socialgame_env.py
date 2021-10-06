@@ -717,7 +717,7 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLib):
             energy_consumptions[player_name] = player_energy
             total_consumption += player_energy
 
-        if self.intrinsic_reward=="curiosity_mean" or self.intrinsic_reward == "apt":
+        if self.intrinsic_reward=="curiosity_mean" or self.intrinsic_reward == "apt" or self.intrinsic_reward == "intr_extr":
             intrinsic_reward = np.mean(self.stds)
         elif self.intrinsic_reward =="curiosity_max":
             intrinsic_reward = np.max(self.stds)
@@ -811,6 +811,13 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLib):
                     intrinsic_rewards.append(intrinsic_reward)
                 
                 reward = np.mean(intrinsic_rewards)
+
+            if self.intrinsic_reward == "intr_extr":
+                energy_consumptions, intrinsic_reward = self._simulate_humans_planning_model(points)
+                extrinsic_reward = self._simulate_humans(points)
+                reward = intrinsic_reward + extrinsic_reward["avg"]
+
+
 
             print("std reward mean")
             print(reward)

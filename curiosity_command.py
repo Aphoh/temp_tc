@@ -22,6 +22,7 @@ rew = {0: "curiosity_mean",
     3: "curiosity_max",
     4: "control",
     5: "higher_percentile",
+    6: "intr_extr"
     }
 
 # IPython.embed()
