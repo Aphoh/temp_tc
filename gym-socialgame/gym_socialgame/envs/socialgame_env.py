@@ -814,7 +814,9 @@ class SocialGameEnvRLLibIntrinsicMotivation(SocialGameEnvRLLib):
 
             if self.intrinsic_reward == "intr_extr":
                 energy_consumptions, intrinsic_reward = self._simulate_humans_planning_model(points)
-                extrinsic_reward = self._simulate_humans(points)
+                actual_energy_consumptions = self._simulate_humans(points)
+                extrinsic_reward = self._get_reward(prev_price, actual_energy_consumptions, reward_function = self.reward_function)
+            
                 reward = intrinsic_reward + extrinsic_reward["avg"]
 
 
