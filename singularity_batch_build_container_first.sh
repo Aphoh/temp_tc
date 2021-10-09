@@ -54,7 +54,7 @@ else
     singularity build /global/scratch/users/$USER/lucas_test.sif docker://lucasspangher/socialgame_v1
 fi
     
-singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME \
-  --bind "$LDIR:$HOME/.local" \
+singularity exec --inv --workdir ./tmp --bind $(pwd):$BASE_DIR \
+  --bind "$LDIR:$BASE_DIR/.local" \
   /global/scratch/users/$USER/lucas_test.sif \
   sh -c 'bash singularity_preamble.sh && python curiosity_command.py'
