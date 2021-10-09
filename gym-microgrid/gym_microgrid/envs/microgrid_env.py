@@ -94,7 +94,13 @@ class MicrogridEnv(gym.Env):
 
         # sample a user to save their responses
         self.sample_user = np.random.choice(10, 1)
-        self.sample_user_response = {}
+        self.sample_user_response = {
+            "pv_size": np.nan,
+            "battery_size": np.nan,
+            "sample_user": self.sample_user
+        }
+        for i in range(24):
+            self.sample_user_response["prosumer_response_hour_" + str(i)] = np.nan
 
         #Day corresponds to day # of the yr
 
