@@ -57,4 +57,4 @@ fi
 singularity exec --inv --workdir ./tmp --bind $(pwd):$BASE_DIR \
   --bind "$LDIR:$BASE_DIR/.local" \
   /global/scratch/users/$USER/lucas_test.sif \
-  sh -c 'bash python microgrid_command.py'
+  sh -c 'python microgrid_command.py'
