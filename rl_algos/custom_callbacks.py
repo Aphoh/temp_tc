@@ -243,6 +243,11 @@ class CustomCallbacksMultiagent(CustomCallbacks):
             "real": {k: [] for k in self.cols},
             "shadow": {k: [] for k in self.cols},
             }
+
+        for key, val in self.log_vals.items():
+            for data_key, data_val in self.log_vals[key].items():
+                self.log_vals[str(key + "_" + data_key)] = []
+
         self.log_path_real = self.log_path + "real.h5"
         self.log_path_shadow = self.log_path + "shadow.h5"
         print("initialized Custom Callbacks w real and shadow agents")
@@ -344,20 +349,26 @@ class CustomCallbacksMultiagent(CustomCallbacks):
                     self.log_vals[key]["agent_sell_price_hour_" + str(i - 24)].append(k)
 
         # prosumer responses
-        for key, val in self.log_vals.items():
-            for i, k in enumerate(socialgame_env.sample_user_response[key]):
-                self.log_vals[key]["prosumer_response_hour_" + str(i)].append(k)
+        for key, val in socialgame_env.action_dict.items():
+            for hour_key, hour_val in socialgame_env.sample_user_response[key].items():
+                self.log_vals[key][hour_key].append(hour_val)
 
         # various metadata
 
-        for key, val in self.log_vals.items():
-            self.log_vals[key]["pv_size"] = socialgame_env.sample_user_response["pv_size"]
-            self.log_vals[key]["battery_size"] = socialgame_env.sample_user_response["battery_size"]
-            self.log_vals[key]["sample_user"] = socialgame_env.sample_user_response["sample_user"]
-
-
+        for key, val in self.action_dict.items():
+            self.log_vals[key]["pv_size"].append(socialgame_env.sample_user_response["pv_size"])
+            self.log_vals[key]["battery_size"].append(socialgame_env.sample_user_response["battery_size"])
+            self.log_vals[key]["sample_user"].append(socialgame_env.sample_user_response["sample_user"])
 
         self.steps_since_save += 1
+
+        # flatten the dictionary (for wandb):
+
+        for key, val in self.action_dict.items():
+            for data_key, data_val in self.log_vals[key].items():
+                self.log_vals[str(key + "_" + data_key)].append(data_val)
+
+
         if self.steps_since_save == self.save_interval:
             self.save()
 
