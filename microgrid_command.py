@@ -27,7 +27,7 @@ rew = {0: "curiosity_mean",
 
 # IPython.embed()
 
-command1 = "python rl_algos/StableBaselines.py -w --library=rllib --num_steps=50000 --algo=ppo --reward_function=profit_maximizing --exp_name=gym_microgrid &" 
+command1 = "python rl_algos/StableBaselines.py -w --library=rllib --num_steps=50000 --algo=ppo --reward_function=profit_maximizing --exp_name=logging_counterfactual --gym_env=counterfactual &" 
 
 Command = command1 
 
