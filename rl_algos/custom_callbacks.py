@@ -52,6 +52,8 @@ class CustomCallbacks(DefaultCallbacks):
 
     def save(self):
 
+        IPython.embed()
+
         log_df=pd.DataFrame(data=self.log_vals)
         log_df.to_hdf(self.log_path, "metrics", append=True, format="table")
         for v in self.log_vals.values():
@@ -176,9 +178,6 @@ class CustomCallbacks(DefaultCallbacks):
                 else:
                     self.log_vals["agent_sell_price_hour_" + str(i - 24)].append(k)
 
-            
-            IPython.embed()
-
             for i in range(self.energy_consumption_dim):
                 self.log_vals["prosumer_response_hour_" + str(i)] = (
                     socialgame_env.sample_user_response["prosumer_response_hour_" + str(i)]
@@ -234,6 +233,12 @@ class CustomCallbacksMultiagent(CustomCallbacks):
             multiagent=True)
 
         # TODO: generalize this for arbitrary # of multiagents
+        
+        ## we're gonna have to change this if doing people agents
+        for i in range(24):
+            self.cols.append("agent_buy_price_hour_" + str(i))
+            self.cols.append("agent_sell_price_hour_" + str(i))
+        
         self.log_vals = {
             "real": {k: [] for k in self.cols},
             "shadow": {k: [] for k in self.cols},
@@ -242,10 +247,13 @@ class CustomCallbacksMultiagent(CustomCallbacks):
         self.log_path_shadow = self.log_path + "shadow.h5"
         print("initialized Custom Callbacks w real and shadow agents")
 
+
     def save(self):
 
         # TODO: generalize this to an arbitrary number of agents. 
         # will probably need to instantiate a self object with agent ids 
+
+        # IPython.embed()
 
         log_df_real = pd.DataFrame(data=self.log_vals["real"])
         log_df_shadow = pd.DataFrame(data=self.log_vals["shadow"])
@@ -317,19 +325,37 @@ class CustomCallbacksMultiagent(CustomCallbacks):
             for key in agent_ids:
                 self.log_vals[key]["energy_cost"].append(np.nan)
 
+        # utility prices 
         if obs is not None:
             for key, value in obs.items():
                 for i, k in enumerate(value.flatten()):
                     self.log_vals[key]["utility_price_hour_" + str(i)].append(k)
         else:
-            for i in range(self.obs_dim):
-                self.log_vals["utility_price_hour_" + str(i)].append(np.nan)
+            for key in self.log_vals.keys():
+                for i in range(self.obs_dim):
+                    self.log_vals[key]["utility_price_hour_" + str(i)].append(np.nan)
 
-        for i, k in enumerate(socialgame_env.action.flatten()):
-            if i < 24:
-                self.log_vals["agent_buy_price_hour_" + str(i)].append(k)
-            else:
-                self.log_vals["agent_sell_price_hour_" + str(i - 24)].append(k)
+        # agent buy and sell prices
+        for key, val in socialgame_env.action_dict.items():
+            for i, k in enumerate(val.flatten()):
+                if i < 24:
+                    self.log_vals[key]["agent_buy_price_hour_" + str(i)].append(k)
+                else:
+                    self.log_vals[key]["agent_sell_price_hour_" + str(i - 24)].append(k)
+
+        # prosumer responses
+        for key, val in self.log_vals.items():
+            for i, k in enumerate(socialgame_env.sample_user_response[key]):
+                self.log_vals[key]["prosumer_response_hour_" + str(i)].append(k)
+
+        # various metadata
+
+        for key, val in self.log_vals.items():
+            self.log_vals[key]["pv_size"] = socialgame_env.sample_user_response["pv_size"]
+            self.log_vals[key]["battery_size"] = socialgame_env.sample_user_response["battery_size"]
+            self.log_vals[key]["sample_user"] = socialgame_env.sample_user_response["sample_user"]
+
+
 
         self.steps_since_save += 1
         if self.steps_since_save == self.save_interval:

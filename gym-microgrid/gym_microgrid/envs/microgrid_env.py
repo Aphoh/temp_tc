@@ -93,14 +93,17 @@ class MicrogridEnv(gym.Env):
         self.generation = self._get_generation()
 
         # sample a user to save their responses
-        self.sample_user = np.random.choice(10, 1)
+        self.sample_user = np.random.choice(10, 1)[0]
         self.sample_user_response = {
             "pv_size": np.nan,
             "battery_size": np.nan,
             "sample_user": self.sample_user
         }
+        self.sample_user_response["real"] = {}
+        self.sample_user_response["shadow"] = {}
         for i in range(24):
-            self.sample_user_response["prosumer_response_hour_" + str(i)] = np.nan
+            self.sample_user_response["real"]["prosumer_response_hour_" + str(i)] = np.nan
+            self.sample_user_response["shadow"]["prosumer_response_hour_" + str(i)] = np.nan
 
         #Day corresponds to day # of the yr
 
@@ -555,22 +558,22 @@ class MicrogridEnv(gym.Env):
             "_user_" + 
             str(self.sample_user))
 
+
         self.sample_user_response["pv_size"] = self.pv_sizes[self.sample_user]
         self.sample_user_response["battery_size"] = self.battery_sizes[self.sample_user]
 
         # get the building
-        prosumer = list(self.prosumer_dict.keys())[self.sample_user]
-        prosumer_consumptions = energy_consumptions[prosumer]
 
-        for i, k in enumerate(prosumer_consumptions.flatten()):
-            self.sample_user_response["prosumer_response_hour_" + str(i)] = k
+        prosumer = list(self.prosumer_dict.keys())[self.sample_user]
+
+        for key, val in energy_consumptions.items():
+            for i, k in enumerate(val[prosumer].flatten()):
+                self.sample_user_response[key]["prosumer_response_hour_" + str(i)] = k
 
         if not self.iteration % 10:
-            self.sample_user = np.random.choice(10, 1)
+            self.sample_user = np.random.choice(10, 1)[0]
 
-        self.energy_consumption_length = len(prosumer_consumptions)
-
-        IPython.embed()
+        self.energy_consumption_length = len(self.sample_user_response["real"])
 
         return
 
@@ -687,9 +690,15 @@ class CounterfactualMicrogridEnvRLLib(MicrogridEnvRLLib, MultiAgentEnv):
             "shadow": 1
         }
         self.last_energy_reward = {
-            "real": 1,
-            "shadow": 1,
+            "real": np.repeat(1, 48),
+            "shadow": np.repeat(1, 48),
         }
+        self.action_dict = {
+            "real": np.repeat(1, 48),
+            "shadow": np.repeat(1, 48),
+        }
+        
+
 
     def _get_reward_twoprices(
             self, 
