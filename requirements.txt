@@ -11,6 +11,13 @@ pandas==1.1.5
 tables==3.6.1
 aioredis==1.3
 pytorch-lightning==1.4.4
+<<<<<<< HEAD
 torchtext==0.9.0
 torchvision==0.9.0
 tensorflow==2.6.0
+=======
+torchtext==0.8.1
+torchvision==0.8.2
+torch==1.7.1
+tensorflow==2.3.0
+>>>>>>> d6b844e4770b1a36b00efa05ff244dbe58fd96ff

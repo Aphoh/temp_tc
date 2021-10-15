@@ -47,13 +47,13 @@ export SINGULARITY_CACHEDIR=$BASE_DIR/.singularity/cache
 SINGULARITY_TEMPDIR=$BASE_DIR/tmp
 export SINGULARITY_TEMPDIR=$BASEDIR/tmp
 
-if test -f "$BASE_DIR/lucas_test.simg"; then
+if test -f "$BASE_DIR/lucas_test.sif"; then
     echo "image exists"
 else
-    singularity build /global/scratch/users/$USER/lucas_test.simg docker://lucasspangher/socialgame_v1
+    singularity build /global/scratch/users/$USER/lucas_test.sif docker://lucasspangher/socialgame_v1
 fi
     
-singularity exec --nv --workdir ./tmp --bind $SINGULARITY_IMAGE_LOCATION \
+singularity exec --nv --workdir ./tmp --bind $(pwd):$HOME \
   --bind "$LDIR:$HOME/.local" \
-  /global/scratch/users/$USER/lucas_test.simg \
+  /global/scratch/users/$USER/lucas_test.sif \
   sh -c 'bash singularity_preamble.sh && bash intrinsic_curiosity_experiment.sh'
