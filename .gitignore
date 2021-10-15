@@ -247,3 +247,5 @@ ray_results/
 wandb_export*
 graph_csv*
 /planning_ckpts_diverse2
+.vscode
+.vscode-server

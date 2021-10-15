@@ -1,0 +1,5 @@
+[user]
+	email = 1008981@gmail.com
+	name = Demosthen
+[credential]
+	helper = "!f() { /home/tc/.vscode-server/bin/e7d7e9a9348e6a8cc8c03f877d39cb72e5dfb1ff/node /tmp/vscode-remote-containers-c74a06ef0532217ed88f390014020b362f383941.js $*; }; f"
