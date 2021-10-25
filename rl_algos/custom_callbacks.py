@@ -28,7 +28,7 @@ class CustomCallbacks(DefaultCallbacks):
         super().__init__()
         self.log_path = log_path + ".h5"
         self.save_interval = save_interval
-        self.cols = ["step", "energy_reward", "smirl_reward", "energy_cost"]
+        self.cols = ["step", "smirl_reward", "energy_cost"]
         for i in range(obs_dim):
             self.cols.append("utility_price_hour_" + str(i))
         
@@ -43,7 +43,7 @@ class CustomCallbacks(DefaultCallbacks):
         self.energy_consumption_dim = energy_consumption_dim
         self.cols.append("pv_size")
         self.cols.append("battery_size")
-        self.cols.append("sample_user")
+        # self.cols.append("sample_user")
         self.obs_dim = obs_dim
         self.multiagent = multiagent
 
@@ -132,7 +132,7 @@ class CustomCallbacks(DefaultCallbacks):
                     )
                 self.log_vals["pv_size"] = socialgame_env.sample_user_response["pv_size"]
                 self.log_vals["battery_size"] = socialgame_env.sample_user_response["battery_size"]
-                self.log_vals["sample_user"] = socialgame_env.sample_user_response["sample_user"]
+                # self.log_vals["sample_user"] = socialgame_env.sample_user_response["sample_user"]
 
 
                 self.steps_since_save += 1
@@ -184,7 +184,7 @@ class CustomCallbacks(DefaultCallbacks):
                 )
             self.log_vals["pv_size"] = socialgame_env.sample_user_response["pv_size"]
             self.log_vals["battery_size"] = socialgame_env.sample_user_response["battery_size"]
-            self.log_vals["sample_user"] = socialgame_env.sample_user_response["sample_user"]
+            # self.log_vals["sample_user"] = socialgame_env.sample_user_response["sample_user"]
 
 
             self.steps_since_save += 1
@@ -225,7 +225,7 @@ class CustomCallbacks(DefaultCallbacks):
         return
 
 class CustomCallbacksMultiagent(CustomCallbacks):
-    def __init__(self, log_path, save_interval, obs_dim=10, multiagent = True):
+    def __init__(self, log_path, save_interval, obs_dim=24, multiagent = True):
         super().__init__(
             log_path=log_path, 
             save_interval=save_interval, 
@@ -235,16 +235,16 @@ class CustomCallbacksMultiagent(CustomCallbacks):
         # TODO: generalize this for arbitrary # of multiagents
         
         ## we're gonna have to change this if doing people agents
-        for i in range(24):
-            self.cols.append("agent_buy_price_hour_" + str(i))
-            self.cols.append("agent_sell_price_hour_" + str(i))
+        # for i in range(24):
+        #     self.cols.append("agent_buy_price_hour_" + str(i))
+        #     self.cols.append("agent_sell_price_hour_" + str(i))
         
         self.log_vals = {
             "real": {k: [] for k in self.cols},
             "shadow": {k: [] for k in self.cols},
             }
 
-        for key, val in self.log_vals.items():
+        for key in ["real", "shadow"]:
             for data_key, data_val in self.log_vals[key].items():
                 self.log_vals[str(key + "_" + data_key)] = []
 
@@ -258,18 +258,34 @@ class CustomCallbacksMultiagent(CustomCallbacks):
         # TODO: generalize this to an arbitrary number of agents. 
         # will probably need to instantiate a self object with agent ids 
 
-        # IPython.embed()
+        # IPython.embed() 
 
         log_df_real = pd.DataFrame(data=self.log_vals["real"])
+        log_df_real = log_df_real[log_df_real["step"]!=0]
         log_df_shadow = pd.DataFrame(data=self.log_vals["shadow"])
-        log_df_real.to_hdf(self.log_path_real, "metrics", append=True, format="table")
-        log_df_shadow.to_hdf(self.log_path_shadow, "metrics", append=True, format="table")
+        log_df_shadow = log_df_shadow[log_df_shadow["step"]!=0]
+        for col in log_df_real.columns:
+            log_df_real[col] = log_df_real[col].astype(float)
+            log_df_shadow[col] = log_df_shadow[col].astype(float)
+        try:
+            log_df_real.to_hdf(self.log_path_real, "metrics", append=True, format="table")
+        except:
+            print("log_df_real")
+            IPython.embed()
+            raise ValueError
+        try:
+            log_df_shadow.to_hdf(self.log_path_shadow, "metrics", append=True, format="table")
+        except:
+            print("shadow")
+            IPython.embed()
+            raise ValueError
         for v in self.log_vals["real"].values():
             v.clear()
         for v in self.log_vals["shadow"].values():
             v.clear()
                                           
         self.steps_since_save=0
+
 
     def on_episode_start(self, *, worker: RolloutWorker, base_env: BaseEnv,
                          policies: Dict[str, Policy],
@@ -316,10 +332,10 @@ class CustomCallbacksMultiagent(CustomCallbacks):
             for key, energy_rew in socialgame_env.last_energy_reward.items():
                 episode.user_data["energy_reward_" + key].append(energy_rew)
                 episode.hist_data["energy_reward_" + key].append(energy_rew)
-                self.log_vals[key]["energy_reward"].append(energy_rew)
-        else:
-            for key in agent_ids:
-                self.log_vals[key]["energy_reward"].append(np.nan)
+                # self.log_vals[key]["energy_reward"].append(energy_rew)
+        # else:
+            # for key in agent_ids:
+                # self.log_vals[key]["energy_reward"].append(np.nan)
 
         if socialgame_env.last_energy_cost.items():
             for key, energy_cost in socialgame_env.last_energy_cost.items():
@@ -333,7 +349,7 @@ class CustomCallbacksMultiagent(CustomCallbacks):
         # utility prices 
         if obs is not None:
             for key, value in obs.items():
-                for i, k in enumerate(value.flatten()):
+                for i, k in enumerate(value.flatten()[48:]):
                     self.log_vals[key]["utility_price_hour_" + str(i)].append(k)
         else:
             for key in self.log_vals.keys():
@@ -355,16 +371,16 @@ class CustomCallbacksMultiagent(CustomCallbacks):
 
         # various metadata
 
-        for key, val in self.action_dict.items():
+        for key, val in socialgame_env.action_dict.items():
             self.log_vals[key]["pv_size"].append(socialgame_env.sample_user_response["pv_size"])
             self.log_vals[key]["battery_size"].append(socialgame_env.sample_user_response["battery_size"])
-            self.log_vals[key]["sample_user"].append(socialgame_env.sample_user_response["sample_user"])
+            # self.log_vals[key]["sample_user"].append(socialgame_env.sample_user_response["sample_user"])
 
         self.steps_since_save += 1
 
         # flatten the dictionary (for wandb):
 
-        for key, val in self.action_dict.items():
+        for key, val in socialgame_env.action_dict.items():
             for data_key, data_val in self.log_vals[key].items():
                 self.log_vals[str(key + "_" + data_key)].append(data_val)
 

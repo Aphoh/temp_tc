@@ -169,7 +169,7 @@ def train(agent, num_steps, tb_log_name, args = None, library="sb3"):
                 callbacks = CustomCallbacksMultiagent(
                     log_path=out_path, 
                     save_interval=args.bulk_log_interval, 
-                    obs_dim=obs_dim, 
+                    obs_dim=24, 
                     multiagent=True)
             else:
                 callbacks = CustomCallbacks(

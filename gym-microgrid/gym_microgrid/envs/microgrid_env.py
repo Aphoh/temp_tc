@@ -97,7 +97,7 @@ class MicrogridEnv(gym.Env):
         self.sample_user_response = {
             "pv_size": np.nan,
             "battery_size": np.nan,
-            "sample_user": self.sample_user
+            # "sample_user": self.sample_user
         }
         self.sample_user_response["real"] = {}
         self.sample_user_response["shadow"] = {}
@@ -552,11 +552,11 @@ class MicrogridEnv(gym.Env):
             energy_consumptions: output from simulate_humans
         """
 
-        self.sample_user_response["sample_user"] = (
-            "scenario_" + 
-            str(self.complex_batt_pv_scenario) + 
-            "_user_" + 
-            str(self.sample_user))
+        # self.sample_user_response["sample_user"] = (
+        #     "scenario_" + 
+        #     str(self.complex_batt_pv_scenario) + 
+        #     "_user_" + 
+        #     str(self.sample_user))
 
 
         self.sample_user_response["pv_size"] = self.pv_sizes[self.sample_user]
