@@ -2,7 +2,10 @@ import argparse
 import numpy as np
 import gym
 import utils
+import sys
 from custom_callbacks import CustomCallbacks
+
+
 import wandb
 import os
 import datetime as dt
@@ -1045,7 +1048,31 @@ def parse_args():
         ],
         default="curiosity_mean"
     )
-
+    parser.add_argument("--threshold_type",
+        help = "how to set the threshold for planning model guardrail. \
+            If an integer from 1 to 20 is passed in, we look at how many estimators suggest a number less than 75",
+        type=str,
+        choices = [
+            "convex",
+            "s",
+            "concave",
+            "hard",
+            "uncertain",
+        ] + [str(i) for i in range(20)],
+        default="hard")
+    parser.add_argument("--thresh_scale",
+        help = "scaling parameter for planning guardrail threshold",
+        type=float,
+        default=1.0
+    )
+    parser.add_argument("--thresh_offset",
+        help="offset parameter for planning guardrail threshold",
+        type=float,
+        default=1.0)
+    parser.add_argument("--thresh_uncertain",
+        help="uncertainty threshold for planning guardrail",
+        type=float,
+        default=1.0)
 
     args = parser.parse_args()
     curr_datetime = str(dt.datetime.today())
@@ -1071,7 +1098,7 @@ def main():
         wandb.init(project="energy-demand-response-game", entity="social-game-rl")
         if args.wandb_run_name:
             wandb.run.name = args.wandb_run_name
-        wandb.tensorboard.patch(root_logdir=args.log_path) # patching the logdir directly seems to work
+        wandb.tensorboard.patch(root_logdir=args.log_path, tensorboardX=False) # patching the logdir directly seems to work
         wandb.config.update(args)
 
     # Create environments

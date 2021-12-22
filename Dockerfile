@@ -20,6 +20,11 @@ RUN pip install -e ./gym-socialgame/
 COPY ./gym-microgrid/ ./gym-microgrid/
 RUN pip install -e ./gym-microgrid/ 
 
+RUN pip uninstall wandb
+
+COPY ./wandb_clone/client/ ./wandb_clone/client/
+RUN pip install -e ./wandb_clone/client/ 
+
 ENV TUNE_RESULT_DIR=/home/$UNAME/logs
 
 USER $UNAME

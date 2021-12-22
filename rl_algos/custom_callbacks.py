@@ -23,7 +23,9 @@ class CustomCallbacks(DefaultCallbacks):
         super().__init__()
         self.log_path=log_path
         self.save_interval=save_interval
-        self.cols = ["step", "energy_reward", "smirl_reward", "energy_cost", "predicted_costs"]
+        self.cols = ["step", "energy_reward", "smirl_reward", "energy_cost"]
+        if planning_model:
+            self.cols.extend(["predicted_costs", "prediction_error"])
         for i in range(obs_dim):
             self.cols.append("observation_" + str(i))
         self.obs_dim = obs_dim
@@ -32,6 +34,8 @@ class CustomCallbacks(DefaultCallbacks):
         self.planning_model=planning_model
         self.env = env
         self.args = args
+        self.prediction_errors = []
+        self.predicted_costs = []
 
     def save(self):
         log_df=pd.DataFrame(data=self.log_vals)
@@ -61,6 +65,9 @@ class CustomCallbacks(DefaultCallbacks):
 
         episode.user_data["predicted_costs"] = []
         episode.hist_data["predicted_costs"] = []
+        
+        episode.user_data["prediction_error"] = []
+        episode.hist_data["prediction_error"] = []
 
     def on_episode_step(self, *, worker: RolloutWorker, base_env: BaseEnv,
                         episode: MultiAgentEpisode, env_index: int, **kwargs):
@@ -71,59 +78,81 @@ class CustomCallbacks(DefaultCallbacks):
             self.log_vals["step"].append(step_i)        
         # TODO: Implement logging for planning_env 
         if hasattr(socialgame_env, "is_step_in_real"):
+
             episode.custom_metrics["is_step_in_real"] = socialgame_env.is_step_in_real
-            if socialgame_env.is_step_in_real:
-                print("Logging real step: ", self.steps_since_save)
-                self.log_vals["step"].append(socialgame_env.num_real_steps)
-                episode.user_data["real_step"].append(socialgame_env.num_real_steps)
-                episode.hist_data["real_step"].append(socialgame_env.num_real_steps)
-                if socialgame_env.use_smirl and socialgame_env.last_smirl_reward:
-                    smirl_rew = socialgame_env.last_smirl_reward
-                    episode.user_data["smirl_reward"].append(smirl_rew)
-                    episode.hist_data["smirl_reward"].append(smirl_rew)
-                    self.log_vals["smirl_reward"].append(smirl_rew)
-                else:
-                    self.log_vals["smirl_reward"].append(np.nan)
+            if hasattr(socialgame_env, "prev_planning_error") and socialgame_env.prev_planning_error is not None:
+                predicted_error = socialgame_env.prev_planning_error
+                self.prediction_errors.append(predicted_error)
+            if hasattr(socialgame_env, "last_predicted_cost") and socialgame_env.last_predicted_cost:
+                predicted_cost = socialgame_env.last_predicted_cost
+                self.predicted_costs.append(predicted_cost)
+            # if socialgame_env.is_step_in_real:
+            print("Logging real step: ", self.steps_since_save)
+            self.log_vals["step"].append(socialgame_env.num_real_steps)
+            episode.user_data["real_step"].append(socialgame_env.num_real_steps)
+            #episode.hist_data["real_step"].append(socialgame_env.num_real_steps)
+            if socialgame_env.use_smirl and socialgame_env.last_smirl_reward:
+                smirl_rew = socialgame_env.last_smirl_reward
+                episode.user_data["smirl_reward"].append(smirl_rew)
+                #episode.hist_data["smirl_reward"].append(smirl_rew)
+                self.log_vals["smirl_reward"].append(smirl_rew)
+            else:
+                self.log_vals["smirl_reward"].append(np.nan)
 
-                if socialgame_env.last_energy_reward:
-                    energy_rew = socialgame_env.last_energy_reward
-                    episode.user_data["energy_reward"].append(energy_rew)
-                    episode.hist_data["energy_reward"].append(energy_rew)
-                    self.log_vals["energy_reward"].append(energy_rew)
-                else:
-                    self.log_vals["energy_reward"].append(np.nan)
+            if socialgame_env.last_energy_reward:
+                energy_rew = socialgame_env.last_energy_reward
+                episode.user_data["energy_reward"].append(energy_rew)
+                #episode.hist_data["energy_reward"].append(energy_rew)
+                self.log_vals["energy_reward"].append(energy_rew)
+            else:
+                self.log_vals["energy_reward"].append(np.nan)
 
-                if socialgame_env.last_energy_cost:
-                    energy_cost = socialgame_env.last_energy_cost
-                    episode.user_data["energy_cost"].append(energy_cost)
-                    episode.hist_data["energy_cost"].append(energy_cost)
-                    self.log_vals["energy_cost"].append(energy_cost)
-                else:
-                    self.log_vals["energy_cost"].append(np.nan)
+            if socialgame_env.last_energy_cost:
+                energy_cost = socialgame_env.last_energy_cost
+                episode.user_data["energy_cost"].append(energy_cost)
+                
+                # episode.hist_data["energy_cost"].append(energy_cost)
+                # episode.hist_data["energy_cost"] = episode.hist_data["energy_cost"][-512:]
+                self.log_vals["energy_cost"].append(energy_cost)
+            else:
+                self.log_vals["energy_cost"].append(np.nan)
 
-                if hasattr(socialgame_env, "last_predicted_cost") and socialgame_env.last_predicted_cost:
-                    predicted_costs = socialgame_env.last_predicted_cost
-                    episode.hist_data["predicted_costs"].append(predicted_costs)
-                    episode.user_data["predicted_costs"].append(predicted_costs)
-                    self.log_vals["predicted_costs"].append(predicted_costs)
-                else:
-                    self.log_vals["predicted_costs"].append(np.nan)
+            if len(self.predicted_costs) > 0:
+                predicted_costs = np.mean(np.array(self.predicted_costs))
+                episode.hist_data["predicted_costs"].append(predicted_costs)
+                episode.hist_data["predicted_costs"] = episode.hist_data["predicted_costs"][-300:]
+                episode.user_data["predicted_costs"].append(predicted_costs)
 
-                if isinstance(socialgame_env, NormalizeActionWrapper):
-                    obs = socialgame_env.env._get_observation()
-                else:
-                    obs = socialgame_env._get_observation()
-                if obs is not None:
-                    for i, k in enumerate(obs.flatten()):
-                        self.log_vals["observation_" + str(i)].append(k)
-                else:
-                    for i in range(self.obs_dim):
-                        self.log_vals["observation_" + str(i)].append(np.nan)
+                self.log_vals["predicted_costs"].append(predicted_costs)
+                self.predicted_costs = []
+            else:
+                self.log_vals["predicted_costs"].append(np.nan)
 
-                self.steps_since_save += 1
+            if len(self.prediction_errors) > 0:
+                predicted_error = np.mean(np.array(self.prediction_errors))
+                episode.hist_data["prediction_error"].append(predicted_error)
+                episode.hist_data["prediction_error"] = episode.hist_data["prediction_error"][-300:]
+                episode.user_data["prediction_error"].append(predicted_error)
+                self.log_vals["prediction_error"].append(predicted_error)
+                self.prediction_errors = []
+            else:
+                self.log_vals["prediction_error"].append(np.nan)
+
+            if isinstance(socialgame_env, NormalizeActionWrapper):
+                obs = socialgame_env.env._get_observation()
+            else:
+                obs = socialgame_env._get_observation()
+            if obs is not None:
+                for i, k in enumerate(obs.flatten()):
+                    self.log_vals["observation_" + str(i)].append(k)
+            else:
+                for i in range(self.obs_dim):
+                    self.log_vals["observation_" + str(i)].append(np.nan)
+
+            self.steps_since_save += 1
                 
         else:
-            
+            episode.user_data["real_step"].append(socialgame_env.num_real_steps)
             if socialgame_env.use_smirl and socialgame_env.last_smirl_reward:
                 smirl_rew = socialgame_env.last_smirl_reward
                 episode.user_data["smirl_reward"].append(smirl_rew)
@@ -146,9 +175,7 @@ class CustomCallbacks(DefaultCallbacks):
                 episode.hist_data["energy_cost"].append(energy_cost)
                 self.log_vals["energy_cost"].append(energy_cost)
             else:
-                self.log_vals["energy_cost"].append(np.nan)
-
-            
+                self.log_vals["energy_cost"].append(np.nan)              
 
             if isinstance(socialgame_env, NormalizeActionWrapper):
                 obs = socialgame_env.env._get_observation()
@@ -172,6 +199,7 @@ class CustomCallbacks(DefaultCallbacks):
         episode.custom_metrics["energy_reward"] = np.mean(episode.user_data["energy_reward"])
         episode.custom_metrics["energy_cost"] = np.mean(episode.user_data["energy_cost"])
         episode.custom_metrics["predicted_costs"] = np.mean(episode.user_data["predicted_costs"])
+        episode.custom_metrics["prediction_error"] = np.mean(episode.user_data["prediction_error"])
         if socialgame_env.use_smirl:
             episode.custom_metrics["smirl_reward"] = np.mean(episode.user_data["smirl_reward"])
 
@@ -199,7 +227,7 @@ class CustomCallbacks(DefaultCallbacks):
         if len(postprocessed_batch) > 1:
             print("Error: trajectories larger than 1")
             import pdb; pdb.set_trace()
-        if self.planning_model != None:
+        if self.planning_model != None and self.args.tou_replacement:
             # Assumes length of trajectory is 1
             actions = postprocessed_batch["actions"]
             rewards = postprocessed_batch["rewards"]

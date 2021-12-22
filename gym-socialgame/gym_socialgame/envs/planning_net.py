@@ -44,7 +44,7 @@ class Ensemble(nn.Module):
 			output, _ = network(x)
 			outputs.append(output)
 		outputs = torch.stack(outputs)
-		return outputs.mean(dim=0), outputs.std(dim=0) / (self.n_networks ** 0.5)
+		return outputs.mean(dim=0), outputs.std(dim=0) / (self.n_networks ** 0.5), outputs
 
 class EnsembleModule(pl.LightningModule):
 	def __init__(self, n_feature, n_hidden, n_output, n_layers, n_networks, lr) -> None:

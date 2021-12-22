@@ -2,6 +2,7 @@
 # To add a new markdown cell, type '# %% [markdown]'
 # %%
 import numpy as np
+from numpy.core.numerictypes import maximum_sctype
 
 import torch
 import torch.nn as nn
@@ -15,7 +16,8 @@ from torch.utils.data import DataLoader, Dataset
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
-
+grid_price = 0.103 * np.ones(10)
+grid_price[5:8] = 0.4
 # %%
 
 class Person():
@@ -213,6 +215,7 @@ def get_datasets(train_size, val_size):
 	#                         [0,0,0,1,0,0,0,0,0,0]])
 	#square_waves = np.random.uniform(size=[train_size, 10])
 	square_waves = np.random.lognormal(0, 1, size=[train_size, 10])
+	square_waves[:, 5:8] = np.random.lognormal(0, 0.8, size=[train_size, 3])
 	#square_waves /= np.sum(square_waves, axis=-1, keepdims=True)
 	#validation_waves = np.random.uniform(size=[val_size, 10])
 	#validation_waves = validation_waves  / np.sum(validation_waves, axis=-1, keepdims=True)
@@ -226,7 +229,8 @@ def get_datasets(train_size, val_size):
 		
 	output_data=np.array(output_data)
 	validation_data = np.array(validation_data)
-	return square_waves, validation_waves, output_data, validation_data
+	training_cost = np.sum(output_data.dot(grid_price)) * 500 / 1000
+	return square_waves, validation_waves, output_data, validation_data, training_cost
 
 
 # %%
@@ -234,11 +238,12 @@ def get_datasets(train_size, val_size):
 
 # %%
 class Net(torch.nn.Module):
-	def __init__(self, n_feature, n_hidden, n_output, n_layers):
+	def __init__(self, n_feature, n_hidden, n_output, n_layers, device='cpu'):
 		super(Net, self).__init__()
 		self.first_layer = nn.Linear(n_feature, n_hidden)
 		self.hiddens = nn.ModuleList([nn.Linear(n_hidden, n_hidden) for _ in range(n_layers)])
 		self.batchnorms = nn.ModuleList([nn.BatchNorm1d(n_hidden) for _ in range(n_layers)])
+		self.device=device
 		#self.hidden = torch.nn.Linear(n_feature, n_hidden)
 		#self.hidden2 = torch.nn.Linear(n_hidden, n_hidden)
 		#self.hidden3 = torch.nn.Linear(n_hidden, n_hidden)  
@@ -273,30 +278,30 @@ class Ensemble(nn.Module):
 		outputs = torch.stack(outputs)
 		return outputs.mean(dim=0), outputs.std(dim=0) / (self.n_networks ** 0.5)
 
-class EnsembleModule(pl.LightningModule):
-	def __init__(self, n_feature, n_hidden, n_output, n_layers, n_networks, lr) -> None:
-		super(EnsembleModule, self).__init__()
+class NetModule(pl.LightningModule):
+	def __init__(self, n_feature, n_hidden, n_output, n_layers, lr) -> None:
+		super(NetModule, self).__init__()
 		self.n_output = n_output
-		self.n_networks = n_networks
 		self.lr = lr
 		self.loss = nn.MSELoss()
 		self.abs_loss = nn.L1Loss()
-		self.model = Ensemble(n_feature, n_hidden, n_output, n_layers, n_networks, self.device)
+		self.model = Net(n_feature, n_hidden, n_output, n_layers, self.device)
 		
 
 	def shared_step(self, batch, batch_idx):
 		x, y = batch
-		y_hat, y_std = self.model(x)
+		y_hat, _= self.model(x)
 		loss = self.loss(y_hat, y)
 		abs_loss = self.abs_loss(y_hat, y)
-		return loss, abs_loss, y_std.mean()
+		return loss, abs_loss, None
 
 	def training_step(self, batch, batch_idx):
 		loss, abs_loss, y_std = self.shared_step(batch, batch_idx)
 		# logs metrics for each training_step,
 		# and the average across the epoch, to the progress bar and logger
 		self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-		self.log("train_std", y_std.mean(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
+		if y_std is not None:
+			self.log("train_std", y_std, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 		self.log("train_abs_loss", abs_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 		return loss
 
@@ -304,8 +309,10 @@ class EnsembleModule(pl.LightningModule):
 		loss, abs_loss, y_std = self.shared_step(batch, batch_idx)
 		# logs metrics for each training_step,
 		# and the average across the epoch, to the progress bar and logger
+
 		self.log("val_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-		self.log("val_std", y_std, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+		if y_std is not None:
+			self.log("val_std", y_std, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 		self.log("val_abs_loss", abs_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 		
 		return loss
@@ -313,12 +320,28 @@ class EnsembleModule(pl.LightningModule):
 	def configure_optimizers(self):
 		return optim.Adam(self.parameters(), lr=self.lr)
 
+class EnsembleModule(NetModule):
+	def __init__(self, n_feature, n_hidden, n_output, n_layers, n_networks, lr) -> None:
+		super(EnsembleModule, self).__init__(n_feature, n_hidden, n_output, n_layers, lr)
+		self.n_output = n_output
+		self.n_networks = n_networks
+		self.lr = lr
+		self.loss = nn.MSELoss()
+		self.abs_loss = nn.L1Loss()
+		self.model = Ensemble(n_feature, n_hidden, n_output, n_layers, n_networks, self.device)
+	def shared_step(self, batch, batch_idx):
+		x, y = batch
+		y_hat, y_std = self.model(x)
+		loss = self.loss(y_hat, y)
+		abs_loss = self.abs_loss(y_hat, y)
+		return loss, abs_loss, y_std.mean()
+
 # %%
 class BaseData(Dataset):
 	def __init__(self, num_samples) -> None:
 		super().__init__()
 		self.num_samples = num_samples
-		self.waves, _, self.output, _ = get_datasets(num_samples, 0)
+		self.waves, _, self.output, _, self.cost = get_datasets(num_samples, 0)
 
 	def __getitem__(self, idx):
 		return torch.tensor(self.waves[idx], dtype=torch.float32), torch.tensor(self.output[idx], dtype=torch.float32)    
@@ -371,8 +394,9 @@ class LitData(pl.LightningDataModule):
 from copy import deepcopy
 import wandb
 
-n_networks = [24]
-n_train_datas = [500, 1000, 2000, 5000, 7500, 10000, 15000, 20000, 30000, 50000, 75000, 100000]
+n_networks = [20]
+#n_train_datas = [500, 1000, 2000, 5000, 7500, 10000, 15000, 20000, 30000, 50000, 75000, 100000]
+n_train_datas = [100, 250]#[500, 1000, 10000, 30000, 2000, 7500, 15000, 20000, 75000, 100000]
 #lrs = [10**i for i in range(-5, 0)]
 lrs = [0.001]
 #n_hiddens = [4, 8, 16, 32, 64]
@@ -387,34 +411,64 @@ best_final_std = None
 best_stds = []
 best_val_losses = []
 best_val_abs_losses = []
-ckpt_folder = "./planning_ckpts_diverse2/"
+ckpt_folder = "./planning_ckpts_diverse3/"
+os.makedirs(ckpt_folder, exist_ok=True)
 for n_network in n_networks:
 	for weight_decay in weight_decays:
 		for n_train_data in n_train_datas:
-
-			n_hidden=64
-			#square_waves, validation_waves, output_data_normalized, val_data_normalized = get_datasets(n_train_data, 256)
-
-			n_layer=5 
-			net = EnsembleModule(n_feature=10, n_hidden=n_hidden, n_output=10, n_layers=n_layer, n_networks=n_network, lr=3e-4)
 			data = LitData(n_train_data, 512, batch_size=2048)
+			data.setup()
+			nets = []
+			for n in range(n_network):
+				val_loss = 100000000000
+				while val_loss > 100000: # Make sure networks that diverge are not included
+					n_hidden=64
+					#square_waves, validation_waves, output_data_normalized, val_data_normalized = get_datasets(n_train_data, 256)
+
+					n_layer=5
+					#net = EnsembleModule(n_feature=10, n_hidden=n_hidden, n_output=10, n_layers=n_layer, n_networks=n_network, lr=3e-4)
+					net = NetModule(n_feature=10, n_hidden=n_hidden, n_output=10, n_layers=n_layer, lr=3e-4)
+					
+					save_folder = os.path.join(ckpt_folder, str(n_train_data), str(n))
+					os.makedirs(save_folder, exist_ok=True)
+					logger = pl.loggers.WandbLogger(project='energy-demand-planning-model', entity='social-game-rl', reinit=True, tags=["proper_ensemble_saved", "sub_net"], config={'data_cost': data.train_dataset.cost}, group="ensemble_{}".format(n_train_data))
+					early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=0.00, patience=50, divergence_threshold=100000, verbose=True, mode="min")
+					checkpoint_callback = ModelCheckpoint(
+						monitor="val_loss",
+						dirpath=save_folder,
+						mode="min",
+					)
+					logger.log_hyperparams({"n_train_data": n_train_data})
+					trainer = pl.Trainer(gpus=1, auto_lr_find=True, logger=logger, callbacks=[checkpoint_callback, early_stop_callback], max_epochs=10000, min_epochs=50)
+					logger.experiment.define_metric("train_loss", summary="min")
+					logger.experiment.define_metric("val_loss", summary="min")
+					logger.experiment.define_metric("train_abs_loss", summary="min")
+					logger.experiment.define_metric("val_abs_loss", summary="min")
+					trainer.tune(net, datamodule=data)
+					trainer.fit(net, datamodule=data)
+					val_loss = trainer.callback_metrics['val_loss_epoch']
+					logger.experiment.finish()
+				nets.append(net.to('cpu'))
 			save_folder = os.path.join(ckpt_folder, str(n_train_data))
-			logger = pl.loggers.WandbLogger(project='energy-demand-planning-model', entity='social-game-rl', reinit=True, tags=["big_network", "even_more_patience2"])
-			early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=0.00, patience=50, divergence_threshold=100000, verbose=True, mode="min")
+			save_path = os.path.join(save_folder, "ensemble.ckpt")
+			os.makedirs(save_folder, exist_ok=True)
+			logger = pl.loggers.WandbLogger(project='energy-demand-planning-model', entity='social-game-rl', reinit=True, tags=["proper_ensemble_saved"], config={'data_cost': data.train_dataset.cost}, group="ensemble_{}".format(n_train_data))
 			checkpoint_callback = ModelCheckpoint(
-				monitor="val_loss",
-				dirpath=save_folder,
-				mode="min",
-			)
-			logger.log_hyperparams({"n_train_data": n_train_data})
-			trainer = pl.Trainer(gpus=1, auto_lr_find=True, logger=logger, callbacks=[checkpoint_callback, early_stop_callback], max_epochs=10000, min_epochs=50)
-			logger.experiment.define_metric("train_loss", summary="min")
-			logger.experiment.define_metric("val_loss", summary="min")
-			logger.experiment.define_metric("train_abs_loss", summary="min")
-			logger.experiment.define_metric("val_abs_loss", summary="min")
-			trainer.tune(net, datamodule=data)
-			trainer.fit(net, datamodule=data)
+					monitor="val_loss",
+					dirpath=save_folder,
+					mode="min",
+				)
+			ensemble = EnsembleModule(n_feature=10, n_hidden=n_hidden, n_output=10,n_layers=n_layer, n_networks=n_network, lr=0)
+			for i in range(ensemble.n_networks):
+				ensemble.model.networks[i].load_state_dict(nets[i].model.to(ensemble.device).state_dict())
+			trainer = pl.Trainer(gpus=1, logger=logger, max_steps=1)
+			# So ensemble is saved in trainer
+			trainer.fit(ensemble, datamodule=data)
+			trainer.validate(ensemble, datamodule=data)
+			trainer.save_checkpoint(save_path)
 			logger.experiment.finish()
+			
+			
 				
 
 

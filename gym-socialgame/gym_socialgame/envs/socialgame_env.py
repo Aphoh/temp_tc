@@ -1,4 +1,6 @@
 from math import isnan
+
+from numpy.lib.type_check import real
 import gym
 from gym import spaces
 
@@ -86,6 +88,7 @@ class SocialGameEnv(gym.Env):
         self.points_multiplier = points_multiplier
         self.last_energy_cost = None
         self.add_last_cost = True
+        self.num_real_steps = 0
 
         self.day = 0
         self.days_of_week = [0, 1, 2, 3, 4]
@@ -419,6 +422,7 @@ class SocialGameEnv(gym.Env):
         self.day = (self.day + 1) % 365
         self.curr_iter += 1
         self.total_iter +=1
+        self.num_real_steps+=1
         print(self.total_iter)
         done = self.curr_iter > 0
 
@@ -652,6 +656,7 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
         self.planning_delay = env_config["planning_delay"]
         self.intrinsic_reward = env_config["intrinsic_reward"]
         self.predicted_costs = []
+        self.last_planning_output = None
         if self.planning_type == "OLS" or self.num_real_steps < self.planning_delay:
             print("Using OLS planning model")
             self.planning_model = self.OLS_model
@@ -668,15 +673,15 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
         print("Using ANN planning model")
         #self.planning_net = Net(10, 32, 10)
         #self.planning_net.load_state_dict(torch.load(self.planning_model_path))
-        self.planning_net = EnsembleModule.load_from_checkpoint(self.planning_model_path, n_feature=10, n_output=10, n_hidden=64, n_layers=5, n_networks=24, lr=3e-4).model
+        self.planning_net = EnsembleModule.load_from_checkpoint(self.planning_model_path, n_feature=10, n_output=10, n_hidden=64, n_layers=5, n_networks=20, lr=3e-4).model
         # Put loaded planning model into evaluation mode
         self.planning_net.eval()
         def model_wrapper_fn(action):
-            out, std = self.planning_net(
+            out, std, output = self.planning_net(
                 torch.tensor(
                     action.reshape([-1, 10])))
             out = out.detach().numpy().flatten()
-            return out, std
+            return out, std, output
         self.planning_model = model_wrapper_fn
 
     def OLS_model(self, action):
@@ -694,7 +699,7 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
         output[output <= 0] = 1e-8 + np.random.uniform(low=1e-8, high=1e-9, size=output[output <= 0].shape)
         return output
         
-    def _simulate_humans_planning_model(self, action):
+    def _simulate_humans_planning_model(self, action, return_std=False, return_output=False):
         """
         Purpose: A planning model to wrap simulate_humans. 
 
@@ -708,21 +713,35 @@ class SocialGameEnvRLLibPlanning(SocialGameEnvRLLib):
         energy_consumptions = {}
         total_consumption = np.zeros(10)
 
+        #Placing the planning model prediction up here for now since it's only dependent on action
+        if self.planning_type == "ANN":
+            player_energy, std, output = self.planning_model(action)
+
+        else:
+            player_energy = self.planning_model(action)
+            std=None
+            output=None
+        self.last_std = std
+        self.last_planning_output = output
+
         for player_name in self.player_dict:
             #Get players response to agent's actions
             player = self.player_dict[player_name]
-            if self.planning_type == "ANN":
-                player_energy, std = self.planning_model(action)
-                self.last_std = std
-            else:
-                player_energy = self.planning_model(action)
+
  
             #Calculate energy consumption by player and in total (over the office)
             energy_consumptions[player_name] = player_energy
             total_consumption += player_energy
 
         energy_consumptions["avg"] = total_consumption / self.number_of_participants
-        return energy_consumptions
+        ret = [energy_consumptions]
+        if return_std:
+            ret.append(std)
+        if return_output:
+            ret.append(output)
+        if len(ret) == 1:
+            ret = ret[0]
+        return ret
 
     def step(self, action):
         """
@@ -948,11 +967,61 @@ class SocialGameEnvRLLibExtreme(SocialGameEnvRLLibPlanning):
 
 
 class SocialGameEnvRLLibGuardRail(SocialGameEnvRLLibPlanning):
+  
+    def hard_threshold(self, baseline_cost, consumptions, stds, outputs, prev_price):
+        predicted_energy_cost = np.dot(consumptions["avg"], prev_price) * 0.001 * 500
+        return predicted_energy_cost < baseline_cost
+
+    def convex_threshold(self, baseline_cost, consumptions, stds, outputs, prev_price):
+        predicted_energy_cost = np.dot(consumptions["avg"], prev_price) * 0.001 * 500
+        p = min(1.0, np.exp(-(predicted_energy_cost - baseline_cost)))
+        return np.random.random() < p
+
+    def s_threshold(self, baseline_cost, consumptions, stds, outputs, prev_price):
+        predicted_energy_cost = np.dot(consumptions["avg"], prev_price) * 0.001 * 500
+        p = min(1.0, 1 - 1 / (1 + np.exp(-(predicted_energy_cost - self.s_offset)/self.s_scale))) # TODO: set a and b w command line
+        return np.random.random() < p
+
+    def concave_threshold(self, baseline_cost, consumptions, stds, outputs, prev_price):
+        predicted_energy_cost = np.dot(consumptions["avg"], prev_price) * 0.001 * 500
+        p = min( 1.0, -((predicted_energy_cost-75)**2)/100 +1) if predicted_energy_cost>75 else 1
+        return np.random.random() < p
+
+    def quantile_threshold(self, baseline_cost, consumptions, stds, outputs, prev_price):
+        predicted_energy_costs = np.dot(outputs.detach().cpu().numpy(), prev_price) * 0.001 * 500
+        num_greater = 0
+        for i in range(predicted_energy_costs.shape[0]):
+            if predicted_energy_costs[i] > baseline_cost:
+                num_greater += 1
+        return num_greater <= self.quantile  # TODO: set this from cmd
+
+    def uncertainty_threshold(self, baseline_cost, consumptions, stds, outputs, prev_price):
+        predicted_energy_costs = np.dot(outputs, prev_price) * 0.001 * 500
+        est_range = np.max(predicted_energy_costs) - np.min(predicted_energy_costs)
+        return est_range < self.uncertain_thresh
+
+
+
     def __init__(self, env_config):
         print("Using Guardrails")
+        threshold_fns = dict(list({
+            "convex": self.convex_threshold,
+            "s": self.s_threshold,
+            "concave": self.concave_threshold,
+            "hard": self.hard_threshold,
+            "uncertain": self.uncertainty_threshold
+        }.items()) + list({str(i): self.quantile_threshold for i in range(20)}.items()))
         self.predicted_costs = []
         self.last_predicted_cost = 0
+        self.threshold_type = env_config["threshold_type"]
+        self.threshold_fn = threshold_fns[self.threshold_type]
+        if self.threshold_type.isdigit():
+            self.quantile = int(self.threshold_type)
+        self.uncertain_thresh = env_config["thresh_uncertain"]
+        self.s_offset = env_config["thresh_offset"]
+        self.s_scale = env_config["thresh_scale"]
         super().__init__(env_config)
+
 
     def step(self, action):
         """
@@ -990,7 +1059,7 @@ class SocialGameEnvRLLibGuardRail(SocialGameEnvRLLibPlanning):
         done = self.curr_iter > 0
 
         points = self._points_from_action(action)
-        predicted_energy_consumptions = self._simulate_humans_planning_model(points)
+        predicted_energy_consumptions, predicted_std, predicted_outputs = self._simulate_humans_planning_model(points, return_std=True, return_output=True)
         predicted_energy_cost = np.dot(predicted_energy_consumptions["avg"], prev_price) * 0.001 * 500
         self.last_predicted_cost = predicted_energy_cost
         self.predicted_costs.append(predicted_energy_cost)
@@ -998,12 +1067,17 @@ class SocialGameEnvRLLibGuardRail(SocialGameEnvRLLibPlanning):
         tou[5:8] = self.manual_tou_magnitude
         tou_points = self._points_from_action(tou)
         tou_cost = 75
-        if predicted_energy_cost < tou_cost:
+        # We compute this here to compare error against planning model 
+        # (note that _simulate_humans does not currently change env state)
+        real_energy_consumptions = self._simulate_humans(points)
+        real_energy_cost = np.dot(real_energy_consumptions["avg"], prev_price) * 0.001 * 500
+        #if predicted_energy_cost < tou_cost:
+        if self.threshold_fn(tou_cost, predicted_energy_consumptions, predicted_std, predicted_outputs, prev_price):
             # take a step in real
             self.is_step_in_real = True
             self.num_real_steps += 1
             self.planning_step_cnt = 0
-            energy_consumptions = self._simulate_humans(points)
+            energy_consumptions = real_energy_consumptions
             print("using real steps")
             if self.num_real_steps == self.planning_delay:
                 self.swap_to_ANN()
@@ -1012,11 +1086,13 @@ class SocialGameEnvRLLibGuardRail(SocialGameEnvRLLibPlanning):
             self.planning_step_cnt += 1
             # take a step in planning
             self.is_step_in_real = False
-            energy_consumptions = self._simulate_humans_planning_model(points)
+            energy_consumptions = predicted_energy_consumptions
+            #energy_consumptions = self._simulate_humans_planning_model(points)
 
         # HACK ALERT. USING AVG ENERGY CONSUMPTION FOR STATE SPACE. this will not work if people are not all the same
 
         self.prev_energy = energy_consumptions["avg"]
+        self.prev_planning_error = (predicted_energy_cost - real_energy_cost) / np.abs(real_energy_cost)
 
         observation = self._get_observation()
         reward = self._get_reward(prev_price, energy_consumptions, reward_function = self.reward_function)
